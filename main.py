@@ -75,13 +75,35 @@ def main():
     # Frame skipping untuk mengurangi beban CPU
     frame_count = 0
     last_text_display = "Waiting for OCR..."
+
+    # Frame rate controller untuk maintain FPS target
+    frame_interval = 1.0 / camera_fps  # Interval per frame dalam detik
+    last_frame_time = time.time()
     
-    # Untuk membatasi FPS - delay minimum per frame
-    fps_delay = 1.0 / camera_fps  # Delay per frame dalam detik
+    # FPS counter untuk monitoring
+    fps_counter = 0
+    fps_start_time = time.time()
+    current_fps = 0
 
     while True:
         frame_start = time.time()
-        start_time = frame_start
+        
+        # Frame rate limiting: tunggu sampai waktu frame berikutnya
+        elapsed_since_last = frame_start - last_frame_time
+        time_to_wait = frame_interval - elapsed_since_last
+        
+        if time_to_wait > 0:
+            # Konversi ke milidetik untuk waitKey
+            wait_ms = int(time_to_wait * 1000)
+            if cv2.waitKey(wait_ms) & 0xFF == ord('q'):
+                break
+            last_frame_time = time.time()
+        else:
+            # Frame processing lebih lama dari interval, reset timing
+            last_frame_time = frame_start
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+
         ret, frame = cap.read()
 
         if not ret:
@@ -89,13 +111,13 @@ def main():
             break
 
         frame_count += 1
-        
+
         # Hanya proses OCR setiap N frame
         if frame_count % ocr_interval == 0:
             # Resize frame untuk OCR (lebih kecil = lebih cepat)
             h, w = frame.shape[:2]
             small_frame = cv2.resize(frame, (int(w * ocr_scale), int(h * ocr_scale)))
-            
+
             # Lakukan OCR pada frame yang di-resize
             result = ocr.ocr(small_frame)
 
@@ -111,7 +133,7 @@ def main():
 
             # Gabungkan teks untuk ditampilkan
             last_text_display = "\n".join(detected_texts) if detected_texts else "No text detected"
-        
+
         text_display = last_text_display
 
         # Buat area teks (textbox) di bagian bawah frame
@@ -145,16 +167,21 @@ def main():
                     cv2.LINE_AA
                 )
                 y_offset += 20
-        
-        # Tampilkan FPS untuk monitoring performa
+
+        # Hitung FPS aktual untuk monitoring
+        fps_counter += 1
         if show_fps:
-            elapsed = time.time() - start_time
-            fps = 1.0 / elapsed if elapsed > 0 else 0
-            fps_color = (0, 255, 0) if fps < camera_fps * 1.5 else (0, 255, 255)
+            fps_elapsed = time.time() - fps_start_time
+            if fps_elapsed >= 1.0:  # Update FPS setiap 1 detik
+                current_fps = fps_counter / fps_elapsed
+                fps_counter = 0
+                fps_start_time = time.time()
+            
+            fps_color = (0, 255, 0) if current_fps <= camera_fps * 1.1 else (0, 255, 255)
             cv2.putText(
                 frame,
-                f"FPS: {fps:.0f} (target: {camera_fps})",
-                (frame_width - 180, 30),
+                f"FPS: {current_fps:.1f} (target: {camera_fps})",
+                (frame_width - 200, 30),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.5,
                 fps_color,
@@ -164,20 +191,6 @@ def main():
 
         # Menampilkan frame dari kamera dengan teks OCR
         cv2.imshow('Live Camera View - OCR', frame)
-
-        # Hitung delay untuk maintain FPS target
-        frame_elapsed = time.time() - frame_start
-        frame_remaining = fps_delay - frame_elapsed
-        
-        # Delay untuk maintain FPS (gunakan waitKey untuk responsif)
-        if frame_remaining > 0:
-            delay_ms = int(frame_remaining * 1000)
-            if cv2.waitKey(delay_ms) & 0xFF == ord('q'):
-                break
-        else:
-            # Frame processing lebih lama dari target, langsung lanjut
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
 
     # Melepaskan resource
     cap.release()

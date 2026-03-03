@@ -42,19 +42,35 @@ def main():
 
     # Inisialisasi kamera
     cap = cv2.VideoCapture(0)
-    
+
     # Set resolusi kamera sesuai konfigurasi
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, camera_width)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, camera_height)
+    
+    # Set FPS kamera sesuai konfigurasi
+    cap.set(cv2.CAP_PROP_FPS, camera_fps)
 
     # Cek apakah kamera berhasil dibuka
     if not cap.isOpened():
         print("Error: Tidak dapat membuka kamera")
         return
 
+    # Verifikasi FPS yang di-set (beberapa webcam tidak support)
+    actual_fps = cap.get(cv2.CAP_PROP_FPS)
+    actual_width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+    actual_height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+    
     print(f"Menampilkan live camera view dengan OCR. Tekan 'q' untuk keluar.")
     print(f"Konfigurasi: {camera_width}x{camera_height}@{camera_fps}fps, OCR interval={ocr_interval}, scale={ocr_scale}")
     print(f"Target: ~{camera_fps} FPS, OCR update ~{camera_fps/ocr_interval:.1f}x/detik")
+    print(f"---")
+    print(f"FPS yang di-set kamera: {actual_fps} (requested: {camera_fps})")
+    print(f"Resolusi kamera: {actual_width}x{actual_height} (requested: {camera_width}x{camera_height})")
+    if actual_fps != camera_fps and actual_fps > 0:
+        print(f"⚠️  PERHATIAN: Webcam tidak support set FPS manual. FPS aktual: {actual_fps}")
+    elif actual_fps == 0:
+        print(f"⚠️  PERHATIAN: Webcam tidak melaporkan FPS (default driver)")
+    print(f"---")
     
     # Frame skipping untuk mengurangi beban CPU
     frame_count = 0

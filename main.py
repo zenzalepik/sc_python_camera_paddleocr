@@ -3,6 +3,7 @@ import cv2
 import warnings
 import time
 import threading
+import gc  # Garbage collector
 import numpy as np
 from queue import Queue
 from dotenv import load_dotenv
@@ -23,6 +24,56 @@ def calculate_blur_score(frame):
     """
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     return cv2.Laplacian(gray, cv2.CV_64F).var()
+
+
+def aggregate_ocr_results(ocr_history, min_vote_count, confidence_threshold, use_weighted_vote):
+    """
+    Agregasi hasil OCR dari multiple frames menggunakan voting system.
+    
+    Args:
+        ocr_history: List of list, setiap item berisi [{'text': str, 'score': float}, ...]
+        min_vote_count: Minimal jumlah vote untuk teks dianggap valid
+        confidence_threshold: Filter confidence di bawah ini
+        use_weighted_vote: Jika True, gunakan confidence sebagai bobot vote
+    
+    Returns:
+        aggregated_texts: List teks yang lolos voting
+        avg_confidence: Confidence rata-rata
+    """
+    from collections import defaultdict
+    
+    # Kumpulkan semua teks dengan vote dan confidence
+    text_votes = defaultdict(lambda: {'votes': 0, 'scores': [], 'weighted_score': 0.0})
+    
+    for frame_results in ocr_history:
+        for item in frame_results:
+            text = item['text'].strip()
+            score = item['score']
+            
+            if not text or score < confidence_threshold:
+                continue  # Skip teks kosong atau confidence rendah
+            
+            text_votes[text]['votes'] += 1
+            text_votes[text]['scores'].append(score)
+            text_votes[text]['weighted_score'] += score
+    
+    # Filter berdasarkan min_vote_count dan hitung confidence rata-rata
+    aggregated = []
+    for text, data in text_votes.items():
+        if data['votes'] >= min_vote_count:
+            avg_score = sum(data['scores']) / len(data['scores'])
+            
+            if use_weighted_vote:
+                # Weighted confidence
+                weighted_avg = data['weighted_score'] / data['votes']
+                aggregated.append((text, weighted_avg))
+            else:
+                aggregated.append((text, avg_score))
+    
+    # Sort by confidence (descending)
+    aggregated.sort(key=lambda x: x[1], reverse=True)
+    
+    return aggregated
 
 
 def main():
@@ -48,6 +99,7 @@ def main():
 
     # Performa
     show_fps = os.getenv('SHOW_FPS', 'True') == 'True'
+    show_focus_info = os.getenv('SHOW_FOCUS_INFO', 'False') == 'True'
     debug_mode = os.getenv('DEBUG_MODE', 'False') == 'True'
 
     # Smart OCR Mode
@@ -56,6 +108,21 @@ def main():
     display_duration = float(os.getenv('DISPLAY_DURATION', '5'))
     blur_threshold = float(os.getenv('BLUR_THRESHOLD', '100'))
     min_confidence = float(os.getenv('MIN_CONFIDENCE', '0.8'))
+
+    # OCR Aggregation
+    use_aggregation = os.getenv('USE_AGGREGATION', 'False') == 'True'
+    aggregation_frames = int(os.getenv('AGGREGATION_FRAMES', '5'))
+    min_vote_count = int(os.getenv('MIN_VOTE_COUNT', '2'))
+    confidence_threshold = float(os.getenv('CONFIDENCE_THRESHOLD', '0.7'))
+    use_weighted_vote = os.getenv('USE_WEIGHTED_VOTE', 'False') == 'True'
+
+    # Memory Management
+    enable_memory_cleanup = os.getenv('ENABLE_MEMORY_CLEANUP', 'False') == 'True'
+    memory_cleanup_interval = int(os.getenv('MEMORY_CLEANUP_INTERVAL', '30'))
+    
+    # Memory cleanup tracking
+    last_cleanup_time = time.time()
+    cleanup_count = 0
 
     # Inisialisasi PaddleOCR
     ocr = PaddleOCR(use_angle_cls=paddle_use_angle_cls, lang=paddle_lang)
@@ -90,7 +157,7 @@ def main():
     if debug_mode:
         print(f"🐛 DEBUG MODE: AKTIF")
         print(f"   • Logging detail untuk OCR dan state transitions")
-    
+
     if smart_ocr_mode:
         print(f"---")
         print(f"🧠 SMART OCR MODE: AKTIF")
@@ -98,6 +165,20 @@ def main():
         print(f"   • Display duration: {display_duration} detik")
         print(f"   • Blur threshold: {blur_threshold}")
         print(f"   • Min confidence: {min_confidence}")
+    
+    if use_aggregation:
+        print(f"---")
+        print(f"📊 OCR AGGREGATION: AKTIF")
+        print(f"   • Aggregation frames: {aggregation_frames}")
+        print(f"   • Min vote count: {min_vote_count}")
+        print(f"   • Confidence threshold: {confidence_threshold}")
+        print(f"   • Weighted vote: {use_weighted_vote}")
+    
+    if enable_memory_cleanup:
+        print(f"---")
+        print(f"🧹 MEMORY CLEANUP: AKTIF")
+        print(f"   • Cleanup interval: {memory_cleanup_interval} detik")
+    
     print(f"---")
     
     if actual_fps != camera_fps and actual_fps > 0:
@@ -118,9 +199,14 @@ def main():
     last_confidence = 0.0
     ocr_active = True
 
+    # OCR Aggregation history
+    ocr_history = []  # Simpan hasil OCR untuk voting
+    aggregated_result = []  # Hasil setelah voting
+
     # OCR result storage
     ocr_result_queue = Queue(maxsize=1)
     ocr_confidence_queue = Queue(maxsize=1)
+    ocr_raw_queue = Queue(maxsize=1)  # Untuk aggregation: kirim raw text+score
 
     # OCR Worker thread
     ocr_request_queue = Queue(maxsize=1)
@@ -135,11 +221,11 @@ def main():
                 if frame_for_ocr is not None:
                     ocr_count += 1
                     ocr_start = time.time()
-                    
+
                     if debug_mode:
                         print(f"\n[OCR-{ocr_count}] Mulai OCR...")
                         print(f"  Frame size: {frame_for_ocr.shape[1]}x{frame_for_ocr.shape[0]}")
-                    
+
                     # Lakukan OCR
                     result = ocr.ocr(frame_for_ocr)
                     ocr_time = time.time() - ocr_start
@@ -148,30 +234,30 @@ def main():
                     detected_texts = []
                     max_confidence = 0.0
                     all_raw_results = []
-                    
+
                     if debug_mode:
                         print(f"  OCR time: {ocr_time*1000:.1f}ms")
                         print(f"  Raw result type: {type(result)}")
-                    
+
                     if result:
                         for res in result:
                             if debug_mode:
                                 print(f"  Result item type: {type(res)}")
                                 print(f"  Result item: {res}")
-                            
+
                             # Handle berbagai format result PaddleOCR
                             if isinstance(res, dict):
                                 rec_texts = res.get('rec_texts', [])
                                 rec_scores = res.get('rec_scores', [])
                                 dt_boxes = res.get('dt_boxes', [])
-                                
+
                                 if debug_mode:
                                     print(f"  Dict format - rec_texts: {rec_texts}")
                                     print(f"  Dict format - rec_scores: {rec_scores}")
-                                
+
                                 for i, (text, score) in enumerate(zip(rec_texts, rec_scores)):
                                     detected_texts.append(f"{text} ({score:.2f})")
-                                    all_raw_results.append({'text': text, 'score': score, 'box': dt_boxes[i] if i < len(dt_boxes) else None})
+                                    all_raw_results.append({'text': text.strip(), 'score': float(score), 'box': dt_boxes[i] if i < len(dt_boxes) else None})
                                     if score > max_confidence:
                                         max_confidence = score
                             elif isinstance(res, (list, tuple)):
@@ -183,13 +269,13 @@ def main():
                                         text = rec_result[0]
                                         score = rec_result[1]
                                         detected_texts.append(f"{text} ({score:.2f})")
-                                        all_raw_results.append({'text': text, 'score': score, 'box': box})
+                                        all_raw_results.append({'text': text.strip(), 'score': float(score), 'box': box})
                                         if score > max_confidence:
                                             max_confidence = score
-                                        
+
                                         if debug_mode:
                                             print(f"  List format - text: {text}, score: {score}")
-                    
+
                     if debug_mode:
                         print(f"  Detected texts count: {len(detected_texts)}")
                         print(f"  Max confidence: {max_confidence:.2f}")
@@ -197,7 +283,7 @@ def main():
                             print(f"  Texts: {detected_texts}")
                         else:
                             print(f"  [OCR-{ocr_count}] ⚠️  TIDAK ADA TEKS TERDETEKSI")
-                    
+
                     # Update result
                     text_result = "\n".join(detected_texts) if detected_texts else "No text detected"
 
@@ -210,16 +296,28 @@ def main():
                         while not ocr_confidence_queue.empty():
                             ocr_confidence_queue.get_nowait()
                         ocr_confidence_queue.put_nowait(max_confidence)
-                        
+
+                        # Kirim raw results untuk aggregation
+                        while not ocr_raw_queue.empty():
+                            ocr_raw_queue.get_nowait()
+                        ocr_raw_queue.put_nowait(all_raw_results)
+
                         if debug_mode:
                             print(f"  [OCR-{ocr_count}] Result queued: {text_result[:50]}...")
                     except Exception as e:
                         if debug_mode:
                             print(f"  [OCR-{ocr_count}] Queue error: {e}")
                         pass  # Queue penuh, skip
+                    
+                    # Clear variable besar untuk hemat memory
+                    del frame_for_ocr
+                    del result
+                    del detected_texts
+                    del all_raw_results
 
             else:
-                time.sleep(0.001)  # Idle sebentar
+                # Idle - tidur lebih lama agar tidak busy waiting
+                time.sleep(0.05)  # 50ms = 20x/detik (cukup responsif, hemat CPU)
 
     # Start OCR worker thread
     ocr_thread = threading.Thread(target=ocr_worker, daemon=True)
@@ -231,7 +329,10 @@ def main():
     # FPS counter untuk monitoring
     fps_counter = 0
     fps_start_time = time.time()
-    current_fps = 0
+    current_fps = 0.0
+
+    # Focus percentage tracking
+    max_blur_score = 0  # Track max blur score untuk normalisasi
 
     # Frame timing control
     target_frame_delay = 1.0 / camera_fps
@@ -250,6 +351,17 @@ def main():
 
         # Hitung blur score untuk frame ini
         blur_score = calculate_blur_score(frame)
+        
+        # Update max blur score untuk normalisasi
+        if blur_score > max_blur_score:
+            max_blur_score = blur_score
+        
+        # Hitung focus percentage (0-100%)
+        if max_blur_score > 0:
+            focus_percentage = min(100, int((blur_score / max_blur_score) * 100))
+        else:
+            focus_percentage = 0
+        
         is_sharp = blur_score > blur_threshold
 
         # Smart OCR Mode logic
@@ -278,7 +390,7 @@ def main():
 
                     if debug_mode:
                         print(f"\n[SCANNING] Kirim frame ke OCR (frame #{frame_count})...")
-                    
+
                     try:
                         while not ocr_request_queue.empty():
                             ocr_request_queue.get_nowait()
@@ -288,22 +400,63 @@ def main():
                             print(f"  Queue error: {e}")
                         pass
 
-                # Ambil hasil OCR terbaru
+                # Ambil hasil OCR terbaru (raw results untuk aggregation)
                 try:
-                    while not ocr_result_queue.empty():
-                        last_text_display = ocr_result_queue.get_nowait()
-                        last_confidence = ocr_confidence_queue.get_nowait()
-                except:
+                    while not ocr_raw_queue.empty():
+                        raw_result = ocr_raw_queue.get_nowait()
+                        
+                        if use_aggregation:
+                            # Simpan ke history untuk voting
+                            ocr_history.append(raw_result)
+                            
+                            # Batasi history sesuai aggregation_frames
+                            if len(ocr_history) > aggregation_frames:
+                                ocr_history.pop(0)
+                            
+                            # Lakukan voting jika history sudah cukup
+                            if len(ocr_history) >= min_vote_count:
+                                aggregated_result = aggregate_ocr_results(
+                                    ocr_history, 
+                                    min_vote_count, 
+                                    confidence_threshold, 
+                                    use_weighted_vote
+                                )
+                                
+                                # Format hasil aggregation untuk display
+                                if aggregated_result:
+                                    last_text_display = "\n".join([
+                                        f"{text} ({score:.2f})" for text, score in aggregated_result
+                                    ])
+                                    last_confidence = aggregated_result[0][1] if aggregated_result else 0.0
+                                    
+                                    if debug_mode:
+                                        print(f"  [AGGREGATION] Result: {aggregated_result}")
+                                else:
+                                    last_text_display = "Scanning..."
+                                    last_confidence = 0.0
+                            else:
+                                if debug_mode:
+                                    print(f"  [AGGREGATION] Waiting for more frames... ({len(ocr_history)}/{min_vote_count})")
+                        else:
+                            # Mode tanpa aggregation (langsung pakai hasil OCR)
+                            if raw_result:
+                                texts = [f"{item['text']} ({item['score']:.2f})" for item in raw_result]
+                                last_text_display = "\n".join(texts) if texts else "No text detected"
+                                last_confidence = max([item['score'] for item in raw_result], default=0.0)
+                except Exception as e:
+                    if debug_mode:
+                        print(f"  Queue error: {e}")
                     pass
 
                 # Cek apakah dapat teks dengan confidence tinggi
-                if last_confidence >= min_confidence:
+                if last_confidence >= min_confidence and aggregated_result:
                     # Dapat teks bagus, istirahat
                     if debug_mode:
                         print(f"\n[STATE] SCANNING → DISPLAY_ONLY (confidence: {last_confidence:.2f} >= {min_confidence})")
                     current_state = STATE_DISPLAY_ONLY
                     state_start_time = time.time()
-                    last_text_display = f"✓ {last_text_display}"
+                    # Tampilkan hasil aggregation tanpa confidence di display mode
+                    last_text_display = "\n".join([text for text, _ in aggregated_result])
 
             elif current_state == STATE_DISPLAY_ONLY:
                 # State 3: DISPLAY_ONLY - tampilkan hasil, OCR istirahat
@@ -312,15 +465,20 @@ def main():
                 # Tampilkan countdown
                 remaining = display_duration - elapsed_in_state
                 if remaining > 0:
-                    last_text_display = f"{last_text_display} | Next: {remaining:.1f}s"
+                    # Tampilkan hasil aggregation + countdown
+                    aggregated_texts = "\n".join([text for text, _ in aggregated_result])
+                    last_text_display = f"{aggregated_texts}"
                 else:
                     # Waktu display habis, ulang dari focusing
                     if debug_mode:
                         print(f"\n[STATE] DISPLAY_ONLY → FOCUSING (reset cycle)")
                     current_state = STATE_FOCUSING
                     state_start_time = time.time()
-                    last_text_display = "Refocusing..."
+                    last_text_display = "Focusing..."
                     ocr_active = True
+                    # Reset aggregation history
+                    ocr_history = []
+                    aggregated_result = []
         else:
             # Mode normal (tanpa Smart OCR)
             if frame_count % ocr_interval == 0:
@@ -342,34 +500,6 @@ def main():
                 pass
 
         text_display = last_text_display
-
-        # Tampilkan status Smart OCR Mode
-        if smart_ocr_mode:
-            state_names = ["FOCUSING", "SCANNING", "DISPLAY"]
-            state_color = (0, 255, 255) if current_state == STATE_SCANNING else (0, 255, 0)
-            cv2.putText(
-                frame,
-                f"State: {state_names[current_state]}",
-                (10, 25),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.5,
-                state_color,
-                1,
-                cv2.LINE_AA
-            )
-            
-            # Tampilkan blur score
-            blur_color = (0, 255, 0) if is_sharp else (0, 0, 255)
-            cv2.putText(
-                frame,
-                f"Sharp: {blur_score:.0f}/{blur_threshold}",
-                (10, 50),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.5,
-                blur_color,
-                1,
-                cv2.LINE_AA
-            )
 
         # Buat area teks (textbox) di bagian bawah frame
         overlay = frame.copy()
@@ -403,29 +533,87 @@ def main():
                 )
                 y_offset += 20
 
-        # Hitung FPS aktual untuk monitoring
-        fps_counter += 1
-        if show_fps:
+        # Tampilkan info FPS dan Focus
+        if show_focus_info:
+            # Hitung FPS
+            fps_counter += 1
             fps_elapsed = time.time() - fps_start_time
-            if fps_elapsed >= 1.0:  # Update FPS setiap 1 detik
+            if fps_elapsed >= 1.0:
                 current_fps = fps_counter / fps_elapsed
                 fps_counter = 0
                 fps_start_time = time.time()
-
-            fps_color = (0, 255, 0) if current_fps <= camera_fps * 1.1 else (0, 255, 255)
+            
+            # FPS display (kiri atas)
+            fps_color = (0, 255, 0) if current_fps >= camera_fps * 0.9 else (0, 255, 255)
             cv2.putText(
                 frame,
-                f"FPS: {current_fps:.1f} (target: {camera_fps})",
-                (frame_width - 200, 30),
+                f"FPS: {current_fps:.1f}",
+                (10, 25),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.5,
                 fps_color,
                 1,
                 cv2.LINE_AA
             )
+            
+            # Focus percentage display (kanan atas)
+            focus_color = (0, 255, 0) if focus_percentage >= 80 else (0, 255, 255) if focus_percentage >= 50 else (0, 0, 255)
+            cv2.putText(
+                frame,
+                f"Focus: {focus_percentage}%",
+                (frame_width - 120, 25),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                focus_color,
+                1,
+                cv2.LINE_AA
+            )
+            
+            # Target blur threshold info (kiri bawah FPS)
+            cv2.putText(
+                frame,
+                f"Target: {blur_threshold:.0f}",
+                (10, 50),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.4,
+                (200, 200, 200),
+                1,
+                cv2.LINE_AA
+            )
 
         # Menampilkan frame dari kamera dengan teks OCR
         cv2.imshow('Live Camera View - OCR', frame)
+
+        # Memory cleanup periodic
+        if enable_memory_cleanup:
+            current_time = time.time()
+            if current_time - last_cleanup_time >= memory_cleanup_interval:
+                # Clear OCR history untuk hemat memory
+                if smart_ocr_mode and use_aggregation:
+                    ocr_history.clear()
+                    aggregated_result.clear()
+                
+                # Clear queues
+                while not ocr_result_queue.empty():
+                    try:
+                        ocr_result_queue.get_nowait()
+                    except:
+                        pass
+                
+                while not ocr_raw_queue.empty():
+                    try:
+                        ocr_raw_queue.get_nowait()
+                    except:
+                        pass
+                
+                # Force garbage collection
+                gc.collect()
+                
+                cleanup_count += 1
+                last_cleanup_time = current_time
+                
+                if debug_mode:
+                    print(f"\n[MEMORY CLEANUP #{cleanup_count}] Memory cleaned!")
 
         # Frame rate control: tunggu sesuai target FPS
         processing_time = time.time() - loop_start
@@ -446,6 +634,11 @@ def main():
     # Melepaskan resource
     cap.release()
     cv2.destroyAllWindows()
+    
+    # Final garbage collection
+    if enable_memory_cleanup:
+        gc.collect()
+        print(f"\nMemory cleanup total: {cleanup_count}x selama sesi")
 
 
 if __name__ == "__main__":

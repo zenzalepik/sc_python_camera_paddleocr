@@ -2,6 +2,8 @@ import os
 import cv2
 import warnings
 import time
+import threading
+from queue import Queue
 from dotenv import load_dotenv
 from paddleocr import PaddleOCR
 
@@ -71,39 +73,65 @@ def main():
     elif actual_fps == 0:
         print(f"⚠️  PERHATIAN: Webcam tidak melaporkan FPS (default driver)")
     print(f"---")
-    
-    # Frame skipping untuk mengurangi beban CPU
-    frame_count = 0
+
+    # OCR result storage
+    ocr_result_queue = Queue(maxsize=1)  # Hanya simpan 1 result terbaru
     last_text_display = "Waiting for OCR..."
 
-    # Frame rate controller untuk maintain FPS target
-    frame_interval = 1.0 / camera_fps  # Interval per frame dalam detik
-    last_frame_time = time.time()
-    
+    # OCR Worker thread
+    ocr_request_queue = Queue(maxsize=1)  # Hanya antri 1 request terbaru
+    ocr_stop_event = threading.Event()
+
+    def ocr_worker():
+        """Background thread untuk OCR processing"""
+        while not ocr_stop_event.is_set():
+            if not ocr_request_queue.empty():
+                frame_for_ocr = ocr_request_queue.get()
+                if frame_for_ocr is not None:
+                    # Lakukan OCR
+                    result = ocr.ocr(frame_for_ocr)
+
+                    # Ekstrak teks yang terdeteksi
+                    detected_texts = []
+                    if result:
+                        for res in result:
+                            if isinstance(res, dict):
+                                rec_texts = res.get('rec_texts', [])
+                                rec_scores = res.get('rec_scores', [])
+                                for text, score in zip(rec_texts, rec_scores):
+                                    detected_texts.append(f"{text} ({score:.2f})")
+
+                    # Update result
+                    text_result = "\n".join(detected_texts) if detected_texts else "No text detected"
+
+                    # Masukkan ke queue (overwrite jika penuh)
+                    try:
+                        ocr_result_queue.put_nowait(text_result)
+                    except:
+                        pass  # Queue penuh, skip
+
+            else:
+                time.sleep(0.001)  # Idle sebentar
+
+    # Start OCR worker thread
+    ocr_thread = threading.Thread(target=ocr_worker, daemon=True)
+    ocr_thread.start()
+
+    # Frame skipping untuk mengurangi beban CPU
+    frame_count = 0
+
     # FPS counter untuk monitoring
     fps_counter = 0
     fps_start_time = time.time()
     current_fps = 0
 
-    while True:
-        frame_start = time.time()
-        
-        # Frame rate limiting: tunggu sampai waktu frame berikutnya
-        elapsed_since_last = frame_start - last_frame_time
-        time_to_wait = frame_interval - elapsed_since_last
-        
-        if time_to_wait > 0:
-            # Konversi ke milidetik untuk waitKey
-            wait_ms = int(time_to_wait * 1000)
-            if cv2.waitKey(wait_ms) & 0xFF == ord('q'):
-                break
-            last_frame_time = time.time()
-        else:
-            # Frame processing lebih lama dari interval, reset timing
-            last_frame_time = frame_start
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
+    # Frame timing control
+    target_frame_delay = 1.0 / camera_fps
 
+    while True:
+        loop_start = time.time()
+
+        # Baca frame dari kamera (non-blocking dengan waitKey(1))
         ret, frame = cap.read()
 
         if not ret:
@@ -112,27 +140,27 @@ def main():
 
         frame_count += 1
 
-        # Hanya proses OCR setiap N frame
+        # Hanya proses OCR setiap N frame (kirim ke background thread)
         if frame_count % ocr_interval == 0:
             # Resize frame untuk OCR (lebih kecil = lebih cepat)
             h, w = frame.shape[:2]
             small_frame = cv2.resize(frame, (int(w * ocr_scale), int(h * ocr_scale)))
 
-            # Lakukan OCR pada frame yang di-resize
-            result = ocr.ocr(small_frame)
+            # Kirim frame ke OCR worker (non-blocking)
+            try:
+                # Kosongkan queue jika ada request lama
+                while not ocr_request_queue.empty():
+                    ocr_request_queue.get_nowait()
+                ocr_request_queue.put_nowait(small_frame)
+            except:
+                pass  # Queue error, skip OCR frame ini
 
-            # Ekstrak teks yang terdeteksi
-            detected_texts = []
-            if result:
-                for res in result:
-                    if isinstance(res, dict):
-                        rec_texts = res.get('rec_texts', [])
-                        rec_scores = res.get('rec_scores', [])
-                        for text, score in zip(rec_texts, rec_scores):
-                            detected_texts.append(f"{text} ({score:.2f})")
-
-            # Gabungkan teks untuk ditampilkan
-            last_text_display = "\n".join(detected_texts) if detected_texts else "No text detected"
+        # Ambil hasil OCR terbaru jika ada
+        try:
+            while not ocr_result_queue.empty():
+                last_text_display = ocr_result_queue.get_nowait()
+        except:
+            pass
 
         text_display = last_text_display
 
@@ -176,7 +204,7 @@ def main():
                 current_fps = fps_counter / fps_elapsed
                 fps_counter = 0
                 fps_start_time = time.time()
-            
+
             fps_color = (0, 255, 0) if current_fps <= camera_fps * 1.1 else (0, 255, 255)
             cv2.putText(
                 frame,
@@ -191,6 +219,26 @@ def main():
 
         # Menampilkan frame dari kamera dengan teks OCR
         cv2.imshow('Live Camera View - OCR', frame)
+
+        # Frame rate control: tunggu sesuai target FPS
+        # Hitung waktu yang sudah digunakan untuk processing
+        processing_time = time.time() - loop_start
+        time_to_wait = target_frame_delay - processing_time
+
+        # waitKey dengan delay yang dihitung untuk maintain target FPS
+        # Minimal 1ms untuk tetap responsive terhadap input
+        if time_to_wait > 0:
+            wait_ms = max(1, int(time_to_wait * 1000))
+        else:
+            wait_ms = 1  # Processing lebih lama dari target, tetap berikan 1ms untuk input
+
+        # Non-blocking waitKey untuk handle user input
+        if cv2.waitKey(wait_ms) & 0xFF == ord('q'):
+            break
+
+    # Cleanup
+    ocr_stop_event.set()
+    ocr_thread.join(timeout=1.0)
 
     # Melepaskan resource
     cap.release()

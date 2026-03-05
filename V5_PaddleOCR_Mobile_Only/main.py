@@ -54,6 +54,8 @@ class PaddleOCRSimpleGUI:
         self.lang = os.getenv('OCR_LANG', 'en')
         self.conf_threshold = float(os.getenv('CONF_THRESHOLD', '0.5'))
         self.delete_space = os.getenv('DELETE_SPACE', 'False') == 'True'
+        self.group_by_line = os.getenv('GROUP_BY_LINE', 'False') == 'True'
+        self.line_tolerance = int(os.getenv('LINE_TOLERANCE', '10'))
         self.output_dir = os.getenv('OUTPUT_DIR', 'output')
         
         # Create output directory
@@ -85,6 +87,9 @@ class PaddleOCRSimpleGUI:
             print("[OK] PaddleOCR v5 Mobile initialized!")
             print(f"    - Language: {self.lang.upper()}")
             print(f"    - Delete Space: {'ON' if self.delete_space else 'OFF'}")
+            print(f"    - Group by Line: {'ON' if self.group_by_line else 'OFF'}")
+            if self.group_by_line:
+                print(f"    - Line Tolerance: {self.line_tolerance}px")
         except Exception as e:
             print(f"[ERROR] Error initializing PaddleOCR: {e}")
             messagebox.showerror("Error", f"Failed to initialize PaddleOCR:\n{e}")
@@ -301,10 +306,10 @@ class PaddleOCRSimpleGUI:
         """Run OCR detection."""
         try:
             start_time = datetime.now()
-            
+
             # Run PaddleOCR
             result = self.ocr.predict(self.current_image)
-            
+
             # Parse result
             texts = []
             if result and len(result) > 0:
@@ -313,57 +318,168 @@ class PaddleOCRSimpleGUI:
                     rec_texts = first_result.get('rec_texts', [])
                     rec_scores = first_result.get('rec_scores', [])
                     rec_polys = first_result.get('rec_polys', [])
-                    
+
                     for i, (text, score, poly) in enumerate(zip(rec_texts, rec_scores, rec_polys)):
                         if score >= self.conf_threshold:
                             # Process text based on DELETE_SPACE setting
                             processed_text = text.strip()
                             if self.delete_space:
                                 processed_text = processed_text.replace(' ', '')
-                            
+
+                            # Calculate average y-coordinate for grouping
+                            bbox = poly.tolist() if hasattr(poly, 'tolist') else poly
+                            avg_y = sum([pt[1] for pt in bbox]) / 4 if len(bbox) == 4 else 0
+
                             texts.append({
                                 'text': processed_text,
                                 'confidence': float(score),
-                                'bbox': poly.tolist() if hasattr(poly, 'tolist') else poly,
-                                'original_text': text.strip()  # Keep original for reference
+                                'bbox': bbox,
+                                'original_text': text.strip(),
+                                'avg_y': avg_y,
+                                'x_min': min([pt[0] for pt in bbox]) if len(bbox) == 4 else 0
                             })
-            
+
+                    # Group by horizontal lines if enabled
+                    if self.group_by_line:
+                        texts = self.group_texts_by_line(texts)
+
             processing_time = (datetime.now() - start_time).total_seconds()
-            
+
             self.current_result = {
                 'texts': texts,
                 'total_texts': len(texts),
+                'total_lines': len([t for t in texts if t.get('is_grouped', False)]) if self.group_by_line else 0,
                 'processing_time': processing_time,
                 'image_path': self.current_image_path,
                 'timestamp': datetime.now().isoformat()
             }
-            
+
             # Update UI in main thread
             self.root.after(0, self.update_result_ui)
-            
+
         except Exception as e:
             self.root.after(0, lambda: messagebox.showerror("Error", f"Detection failed:\n{e}"))
         finally:
             self.root.after(0, self.detect_complete)
 
+    def group_texts_by_line(self, texts):
+        """
+        Group texts that are on the same horizontal line.
+        
+        Args:
+            texts: List of detected texts with bbox and avg_y
+            
+        Returns:
+            List of grouped texts
+        """
+        if not texts:
+            return []
+
+        # Sort by y-coordinate first
+        texts_sorted = sorted(texts, key=lambda x: x['avg_y'])
+        
+        grouped = []
+        current_line = [texts_sorted[0]]
+        
+        for i in range(1, len(texts_sorted)):
+            current = texts_sorted[i]
+            prev_avg_y = current_line[-1]['avg_y']
+            
+            # Check if current text is on the same line as previous
+            if abs(current['avg_y'] - prev_avg_y) <= self.line_tolerance:
+                # Same line - add to current group
+                current_line.append(current)
+            else:
+                # Different line - finalize current line and start new one
+                if len(current_line) > 1:
+                    # Merge texts in the same line
+                    merged_text = self.merge_line_texts(current_line)
+                    grouped.append(merged_text)
+                else:
+                    # Single text on this line
+                    grouped.append(current_line[0])
+                current_line = [current]
+        
+        # Don't forget the last line
+        if len(current_line) > 1:
+            merged_text = self.merge_line_texts(current_line)
+            grouped.append(merged_text)
+        else:
+            grouped.append(current_line[0])
+        
+        # Sort by y-coordinate (top to bottom)
+        grouped.sort(key=lambda x: x['avg_y'])
+        
+        return grouped
+
+    def merge_line_texts(self, texts):
+        """
+        Merge multiple texts on the same line into one.
+
+        Args:
+            texts: List of texts on the same line (already processed with DELETE_SPACE)
+
+        Returns:
+            Merged text dictionary
+        """
+        # Sort by x-coordinate (left to right)
+        texts_sorted = sorted(texts, key=lambda x: x['x_min'])
+
+        # Merge texts - text already has DELETE_SPACE applied if enabled
+        # Join without space since individual texts already have no spaces
+        merged_text = ' '.join([t['text'] for t in texts_sorted])
+        merged_original = ' '.join([t['original_text'] for t in texts_sorted])
+
+        # Apply DELETE_SPACE to merged result if enabled
+        # This handles the case where grouping is enabled with delete_space
+        if self.delete_space:
+            merged_text = merged_text.replace(' ', '')
+            merged_original = merged_original.replace(' ', '')
+
+        # Average confidence
+        avg_confidence = sum([t['confidence'] for t in texts_sorted]) / len(texts_sorted)
+
+        # Use bounding box of first text (or could merge all bboxes)
+        first_text = texts_sorted[0]
+
+        return {
+            'text': merged_text,
+            'original_text': merged_original,
+            'confidence': avg_confidence,
+            'bbox': first_text['bbox'],
+            'avg_y': first_text['avg_y'],
+            'is_grouped': True,
+            'line_count': len(texts_sorted)
+        }
+
     def update_result_ui(self):
         """Update result display."""
         if self.current_result is None:
             return
-        
+
         # Clear text area
         self.result_text.delete(1.0, tk.END)
-        
+
         # Display results
         texts = self.current_result['texts']
-        
+
         if texts:
             for i, item in enumerate(texts, 1):
-                self.result_text.insert(
-                    tk.END,
-                    f"[{i}] {item['text']}\n",
-                    'text'
-                )
+                # Show grouped text indicator
+                if item.get('is_grouped', False):
+                    line_count = item.get('line_count', 0)
+                    self.result_text.insert(
+                        tk.END,
+                        f"[{i}] {item['text']} (merged {line_count} parts)\n",
+                        'text_grouped'
+                    )
+                else:
+                    self.result_text.insert(
+                        tk.END,
+                        f"[{i}] {item['text']}\n",
+                        'text'
+                    )
+                
                 self.result_text.insert(
                     tk.END,
                     f"    Confidence: {item['confidence']:.2f}\n\n",
@@ -371,15 +487,22 @@ class PaddleOCRSimpleGUI:
                 )
         else:
             self.result_text.insert(tk.END, "No text detected\n")
-        
+
         # Configure tags
         self.result_text.tag_config('text', font=('Consolas', 11))
+        self.result_text.tag_config('text_grouped', font=('Consolas', 11, 'bold'), foreground='blue')
         self.result_text.tag_config('confidence', font=('Consolas', 9), foreground='gray')
-        
+
         # Update status
-        self.status_var.set(
-            f"Detected {len(texts)} text(s) in {self.current_result['processing_time']:.2f}s"
-        )
+        total_lines = self.current_result.get('total_lines', 0)
+        if self.group_by_line and total_lines > 0:
+            self.status_var.set(
+                f"Detected {len(texts)} line(s) ({total_lines} grouped) in {self.current_result['processing_time']:.2f}s"
+            )
+        else:
+            self.status_var.set(
+                f"Detected {len(texts)} text(s) in {self.current_result['processing_time']:.2f}s"
+            )
 
     def detect_complete(self):
         """Detection complete callback."""

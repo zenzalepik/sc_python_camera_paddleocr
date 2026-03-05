@@ -10,9 +10,11 @@ os.environ['PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK'] = 'True'
 # Load konfigurasi dari .env
 load_dotenv()
 
-# Inisialisasi PaddleOCR (API v3.x)
+# Inisialisasi PaddleOCR
+# Default: Server detection + Mobile recognition (balance akurat & cepat)
 ocr = PaddleOCR(
-    use_textline_orientation=True,
+    ocr_version='PP-OCRv5',
+    use_textline_orientation=False,  # Disable untuk performa lebih cepat
     lang=os.getenv('PADDLE_LANG', 'en')
 )
 

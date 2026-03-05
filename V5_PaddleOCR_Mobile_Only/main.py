@@ -53,6 +53,7 @@ class PaddleOCRSimpleGUI:
         # OCR Settings
         self.lang = os.getenv('OCR_LANG', 'en')
         self.conf_threshold = float(os.getenv('CONF_THRESHOLD', '0.5'))
+        self.delete_space = os.getenv('DELETE_SPACE', 'False') == 'True'
         self.output_dir = os.getenv('OUTPUT_DIR', 'output')
         
         # Create output directory
@@ -82,6 +83,8 @@ class PaddleOCRSimpleGUI:
                 text_recognition_model_name='PP-OCRv5_mobile_rec',
             )
             print("[OK] PaddleOCR v5 Mobile initialized!")
+            print(f"    - Language: {self.lang.upper()}")
+            print(f"    - Delete Space: {'ON' if self.delete_space else 'OFF'}")
         except Exception as e:
             print(f"[ERROR] Error initializing PaddleOCR: {e}")
             messagebox.showerror("Error", f"Failed to initialize PaddleOCR:\n{e}")
@@ -195,7 +198,8 @@ class PaddleOCRSimpleGUI:
         clear_btn.pack(side=tk.LEFT, padx=2)
         
         # Status bar
-        self.status_var = tk.StringVar(value="Ready - Open an image to start")
+        space_mode = "NO SPACE" if self.delete_space else "WITH SPACE"
+        self.status_var = tk.StringVar(value=f"Ready - Open an image to start ({space_mode})")
         status_bar = ttk.Label(
             main_frame,
             textvariable=self.status_var,
@@ -312,10 +316,16 @@ class PaddleOCRSimpleGUI:
                     
                     for i, (text, score, poly) in enumerate(zip(rec_texts, rec_scores, rec_polys)):
                         if score >= self.conf_threshold:
+                            # Process text based on DELETE_SPACE setting
+                            processed_text = text.strip()
+                            if self.delete_space:
+                                processed_text = processed_text.replace(' ', '')
+                            
                             texts.append({
-                                'text': text.strip(),
+                                'text': processed_text,
                                 'confidence': float(score),
-                                'bbox': poly.tolist() if hasattr(poly, 'tolist') else poly
+                                'bbox': poly.tolist() if hasattr(poly, 'tolist') else poly,
+                                'original_text': text.strip()  # Keep original for reference
                             })
             
             processing_time = (datetime.now() - start_time).total_seconds()

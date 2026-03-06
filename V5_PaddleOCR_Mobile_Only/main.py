@@ -19,6 +19,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 from pathlib import Path
 import threading
+import time
 from datetime import datetime
 
 import cv2
@@ -56,6 +57,7 @@ class PaddleOCRSimpleGUI:
         self.delete_space = os.getenv('DELETE_SPACE', 'False') == 'True'
         self.group_by_line = os.getenv('GROUP_BY_LINE', 'False') == 'True'
         self.line_tolerance = int(os.getenv('LINE_TOLERANCE', '10'))
+        self.hide_popup_unknown_exception = os.getenv('HIDE_POPUP_UNKNOWN_EXCEPTION', 'False') == 'True'
         self.output_dir = os.getenv('OUTPUT_DIR', 'output')
         
         # Create output directory
@@ -302,13 +304,18 @@ class PaddleOCRSimpleGUI:
         thread.daemon = True
         thread.start()
 
-    def detect_text(self):
-        """Run OCR detection."""
+    def detect_text(self, retry_count=0):
+        """Run OCR detection with auto-retry on error."""
+        max_retries = 2
+        
         try:
             start_time = datetime.now()
+            print(f"[{start_time.strftime('%H:%M:%S')}] [OCR] Running PaddleOCR prediction...")
 
             # Run PaddleOCR
             result = self.ocr.predict(self.current_image)
+            elapsed = (datetime.now() - start_time).total_seconds()
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] [OCR] Completed in {elapsed:.2f}s")
 
             # Parse result
             texts = []
@@ -321,14 +328,13 @@ class PaddleOCRSimpleGUI:
 
                     for i, (text, score, poly) in enumerate(zip(rec_texts, rec_scores, rec_polys)):
                         if score >= self.conf_threshold:
-                            # Process text based on DELETE_SPACE setting
                             processed_text = text.strip()
                             if self.delete_space:
                                 processed_text = processed_text.replace(' ', '')
 
-                            # Calculate average y-coordinate for grouping
                             bbox = poly.tolist() if hasattr(poly, 'tolist') else poly
                             avg_y = sum([pt[1] for pt in bbox]) / 4 if len(bbox) == 4 else 0
+                            x_min = min([pt[0] for pt in bbox]) if len(bbox) == 4 else 0
 
                             texts.append({
                                 'text': processed_text,
@@ -336,10 +342,9 @@ class PaddleOCRSimpleGUI:
                                 'bbox': bbox,
                                 'original_text': text.strip(),
                                 'avg_y': avg_y,
-                                'x_min': min([pt[0] for pt in bbox]) if len(bbox) == 4 else 0
+                                'x_min': x_min
                             })
 
-                    # Group by horizontal lines if enabled
                     if self.group_by_line:
                         texts = self.group_texts_by_line(texts)
 
@@ -354,12 +359,82 @@ class PaddleOCRSimpleGUI:
                 'timestamp': datetime.now().isoformat()
             }
 
-            # Update UI in main thread
-            self.root.after(0, self.update_result_ui)
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] [DEBUG] Found {len(texts)} text(s)")
+            if texts:
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] [SUCCESS] Detection successful!")
+                for i, item in enumerate(texts, 1):
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}] [RESULT]   [{i}] '{item['text']}' (conf: {item['confidence']:.2f})")
 
+            self.root.after(0, self.update_result_ui)
+            self.root.after(0, self.detect_complete)  # Stop progress bar after success
+
+        except RuntimeError as rte:
+            error_msg = str(rte)
+            ts = datetime.now().strftime('%H:%M:%S')
+            print(f"[{ts}] [ERROR] RuntimeError: {error_msg}")
+            
+            if "Unknown exception" in error_msg:
+                print(f"[{ts}] [ERROR] >>> 'Unknown exception' detected - PaddleOCR model error")
+                
+                # Check if we should retry
+                if retry_count < max_retries:
+                    print(f"[{ts}] [ERROR] Will auto-retry... (attempt {retry_count + 1}/{max_retries})")
+                    
+                    # Check if we should hide popup
+                    if self.hide_popup_unknown_exception:
+                        # HIDE POPUP - Auto-retry silently with proper sequencing
+                        print(f"[{ts}] [OCR] HIDE_POPUP=True: Auto-retrying silently...")
+                        
+                        def silent_retry():
+                            time.sleep(0.5)  # Wait before retry
+                            print(f"[{datetime.now().strftime('%H:%M:%S')}] [OCR] Executing silent retry...")
+                            self.detect_text(retry_count + 1)  # Auto-retry!
+                        
+                        # Schedule retry in main thread with delay
+                        self.root.after(500, silent_retry)  # 500ms delay
+                        # Don't call detect_complete here - will be called after retry
+                    else:
+                        # SHOW POPUP - Wait for user to click OK, then auto-retry
+                        print(f"[{ts}] [ERROR] Will auto-retry after you close this error... (attempt {retry_count + 1}/{max_retries})")
+                        
+                        def show_error_and_retry():
+                            messagebox.showerror(
+                                "Error", 
+                                f"Detection failed (PaddleOCR error):\n\n{error_msg}\n\n"
+                                f"Click OK to auto-retry... (attempt {retry_count + 1}/{max_retries})\n\n"
+                                f"If this keeps happening:\n"
+                                f"1. Run clear_cache.bat\n"
+                                f"2. Use different image\n"
+                                f"3. Restart app"
+                            )
+                            # Auto-retry after popup closed
+                            print(f"[{datetime.now().strftime('%H:%M:%S')}] [OCR] Auto-retrying... ({retry_count + 1}/{max_retries})")
+                            self.detect_text(retry_count + 1)  # Auto-retry with incremented count!
+                        
+                        self.root.after(0, show_error_and_retry)
+                        # Don't call detect_complete here - will be called after retry
+                else:
+                    # Max retries reached
+                    print(f"[{ts}] [ERROR] Max retries ({max_retries}) reached. Showing final error.")
+                    self.root.after(0, lambda: messagebox.showerror(
+                        "Error", 
+                        f"Detection failed after {max_retries} attempts:\n\n{error_msg}\n\n"
+                        f"Please try:\n"
+                        f"1. Run clear_cache.bat\n"
+                        f"2. Use different image\n"
+                        f"3. Restart app"
+                    ))
+                    self.root.after(0, self.detect_complete)
+            else:
+                # Different RuntimeError - show error immediately
+                self.root.after(0, lambda err=error_msg: messagebox.showerror("Error", f"Detection failed:\n{err}"))
+                self.root.after(0, self.detect_complete)
+            
         except Exception as e:
-            self.root.after(0, lambda: messagebox.showerror("Error", f"Detection failed:\n{e}"))
-        finally:
+            error_message = str(e)
+            ts = datetime.now().strftime('%H:%M:%S')
+            print(f"[{ts}] [ERROR] Detection failed: {error_message}")
+            self.root.after(0, lambda err=error_message: messagebox.showerror("Error", f"Detection failed:\n{err}"))
             self.root.after(0, self.detect_complete)
 
     def group_texts_by_line(self, texts):

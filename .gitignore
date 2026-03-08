@@ -1,0 +1,20 @@
+# Python virtual environments
+**/venv/
+**/env/
+**/.venv/
+**/virtualenv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment variables
+# .env

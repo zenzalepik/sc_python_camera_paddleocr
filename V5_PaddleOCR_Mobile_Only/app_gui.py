@@ -37,6 +37,13 @@ except ImportError:
     print("💡 Install dengan: pip install paddlepaddle paddleocr")
     sys.exit(1)
 
+# Import Indonesian Plate Processor (optional)
+try:
+    from indonesia.plat_processor import process_plate_text, process_plate_batch
+    INDONESIAN_PLATE_PROCESSOR_AVAILABLE = True
+except ImportError:
+    INDONESIAN_PLATE_PROCESSOR_AVAILABLE = False
+
 # Load konfigurasi
 load_dotenv()
 
@@ -63,7 +70,15 @@ class PaddleOCRDesktopApp:
         self.use_angle_cls = os.getenv('USE_ANGLE_CLS', 'True') == 'True'
         self.conf_threshold = float(os.getenv('CONF_THRESHOLD', '0.5'))
         self.output_dir = os.getenv('OUTPUT_DIR', 'output')
-        
+
+        # Indonesian Plate Processor Settings
+        self.use_indonesian_plate_processor = os.getenv(
+            'USE_INDONESIAN_PLATE_PROCESSOR', 'False'
+        ) == 'True'
+        self.indonesian_plate_fallback = os.getenv(
+            'INDONESIAN_PLATE_FALLBACK_TO_ORIGINAL', 'True'
+        ) == 'True'
+
         # Create output directory
         os.makedirs(self.output_dir, exist_ok=True)
         
@@ -314,13 +329,13 @@ class PaddleOCRDesktopApp:
         thread.start()
 
     def detect_text(self):
-        """Run OCR detection."""
+        """Run OCR detection with optional Indonesian Plate Processor."""
         try:
             start_time = datetime.now()
-            
+
             # Run PaddleOCR
             result = self.ocr.predict(self.current_image)
-            
+
             # Parse result
             texts = []
             if result and len(result) > 0:
@@ -329,51 +344,127 @@ class PaddleOCRDesktopApp:
                     rec_texts = first_result.get('rec_texts', [])
                     rec_scores = first_result.get('rec_scores', [])
                     rec_polys = first_result.get('rec_polys', [])
-                    
+
                     for i, (text, score, poly) in enumerate(zip(rec_texts, rec_scores, rec_polys)):
                         if score >= self.conf_threshold:
-                            texts.append({
+                            text_data = {
                                 'text': text.strip(),
                                 'confidence': float(score),
                                 'bbox': poly.tolist() if hasattr(poly, 'tolist') else poly
-                            })
-            
+                            }
+
+                            # Apply Indonesian Plate Processor if enabled
+                            if self.use_indonesian_plate_processor and INDONESIAN_PLATE_PROCESSOR_AVAILABLE:
+                                processed = process_plate_text(text.strip())
+                                
+                                if processed['is_valid']:
+                                    # Use corrected text if valid
+                                    text_data['text'] = processed['corrected']
+                                    text_data['plate_processor'] = {
+                                        'original': processed['original'],
+                                        'corrected': processed['corrected'],
+                                        'components': processed['components'],
+                                        'is_valid': True
+                                    }
+                                elif self.indonesian_plate_fallback:
+                                    # Fallback to original if invalid
+                                    text_data['plate_processor'] = {
+                                        'original': processed['original'],
+                                        'corrected': processed['corrected'],
+                                        'is_valid': False,
+                                        'message': processed['message']
+                                    }
+                                else:
+                                    # Use corrected even if invalid
+                                    text_data['text'] = processed['corrected']
+                                    text_data['plate_processor'] = {
+                                        'original': processed['original'],
+                                        'corrected': processed['corrected'],
+                                        'is_valid': False,
+                                        'message': processed['message']
+                                    }
+
+                            texts.append(text_data)
+
             processing_time = (datetime.now() - start_time).total_seconds()
-            
+
             self.current_result = {
                 'texts': texts,
                 'total_texts': len(texts),
                 'processing_time': processing_time,
                 'image_path': self.current_image_path,
-                'timestamp': datetime.now().isoformat()
+                'timestamp': datetime.now().isoformat(),
+                'indonesian_plate_processor_enabled': self.use_indonesian_plate_processor
             }
-            
+
             # Update UI in main thread
             self.root.after(0, self.update_result_ui)
-            
+
         except Exception as e:
             self.root.after(0, lambda: messagebox.showerror("Error", f"Detection failed:\n{e}"))
         finally:
             self.root.after(0, self.detect_complete)
 
     def update_result_ui(self):
-        """Update result display."""
+        """Update result display with optional Indonesian Plate Processor info."""
         if self.current_result is None:
             return
-        
+
         # Clear text area
         self.result_text.delete(1.0, tk.END)
-        
+
         # Display results
         texts = self.current_result['texts']
-        
+
         if texts:
             for i, item in enumerate(texts, 1):
-                self.result_text.insert(
-                    tk.END,
-                    f"[{i}] {item['text']}\n",
-                    'text'
-                )
+                # Show plate processor info if available
+                if 'plate_processor' in item:
+                    pp = item['plate_processor']
+                    if pp.get('is_valid', False):
+                        # Valid Indonesian plate - show with indicator
+                        self.result_text.insert(
+                            tk.END,
+                            f"[{i}] {item['text']} ✓\n",
+                            'text_valid'
+                        )
+                        if pp.get('original') != pp.get('corrected'):
+                            self.result_text.insert(
+                                tk.END,
+                                f"    Original: {pp['original']} → Corrected: {pp['corrected']}\n",
+                                'correction'
+                            )
+                        # Show components
+                        if pp.get('components'):
+                            comp = pp['components']
+                            self.result_text.insert(
+                                tk.END,
+                                f"    Region: {comp.get('region', 'N/A')}, "
+                                f"Number: {comp.get('number', 'N/A')}, "
+                                f"Series: {comp.get('series', 'N/A')}\n",
+                                'components'
+                            )
+                    else:
+                        # Invalid format - show original with note
+                        self.result_text.insert(
+                            tk.END,
+                            f"[{i}] {item['text']} ⚠\n",
+                            'text_invalid'
+                        )
+                        if pp.get('message'):
+                            self.result_text.insert(
+                                tk.END,
+                                f"    Note: {pp['message']}\n",
+                                'note'
+                            )
+                else:
+                    # No plate processor - normal display
+                    self.result_text.insert(
+                        tk.END,
+                        f"[{i}] {item['text']}\n",
+                        'text'
+                    )
+
                 self.result_text.insert(
                     tk.END,
                     f"    Confidence: {item['confidence']:.2f}\n\n",
@@ -381,14 +472,20 @@ class PaddleOCRDesktopApp:
                 )
         else:
             self.result_text.insert(tk.END, "No text detected\n")
-        
+
         # Configure tags
         self.result_text.tag_config('text', font=('Consolas', 11))
+        self.result_text.tag_config('text_valid', font=('Consolas', 11, 'bold'), foreground='green')
+        self.result_text.tag_config('text_invalid', font=('Consolas', 11), foreground='orange')
+        self.result_text.tag_config('correction', font=('Consolas', 9), foreground='blue')
+        self.result_text.tag_config('components', font=('Consolas', 9), foreground='purple')
+        self.result_text.tag_config('note', font=('Consolas', 9), foreground='gray')
         self.result_text.tag_config('confidence', font=('Consolas', 9), foreground='gray')
-        
+
         # Update status
+        plate_processor_status = " [ID Plate ON]" if self.current_result.get('indonesian_plate_processor_enabled') else ""
         self.status_var.set(
-            f"Detected {len(texts)} text(s) in {self.current_result['processing_time']:.2f}s"
+            f"Detected {len(texts)} text(s) in {self.current_result['processing_time']:.2f}s{plate_processor_status}"
         )
 
     def detect_complete(self):

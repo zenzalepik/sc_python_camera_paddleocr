@@ -17,6 +17,8 @@ import time
 from datetime import datetime
 from enum import Enum
 import os
+import ctypes
+from ctypes import wintypes
 
 
 class ParkingPhase(Enum):
@@ -687,22 +689,46 @@ class RealTimeDistanceDetector:
     def start(self):
         """Start video capture."""
         self.cap = cv2.VideoCapture(self.camera_id)
-        
+
         if not self.cap.isOpened():
             print(f"[ERROR] Cannot open camera {self.camera_id}")
             return False
-        
-        # Set camera resolution
+
+        # Set camera resolution (tetap 640x480)
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-        
+
         # Set camera view area untuk focus percentage calculation
         frame_width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         frame_height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         self.tracker.camera_view_area = frame_width * frame_height
-        
+
         print(f"[OK] Camera opened: {self.camera_id}")
         print(f"[INFO] Camera view area: {frame_width}x{frame_height} = {self.tracker.camera_view_area}px")
+        
+        # Create window - mode normal (bisa di-maximize)
+        cv2.namedWindow('Object Distance Detection - Parking System', cv2.WINDOW_NORMAL)
+        
+        # Set window position dan size untuk maximize
+        # Menggunakan work area (tidak termasuk taskbar)
+        try:
+            # Get work area (excluding taskbar)
+            SPI_GETWORKAREA = 48
+            rect = wintypes.RECT()
+            ctypes.windll.user32.SystemParametersInfoW(SPI_GETWORKAREA, 0, ctypes.byref(rect), 0)
+            work_width = rect.right - rect.left
+            work_height = rect.bottom - rect.top
+            work_x = rect.left
+            work_y = rect.top
+            
+            # Set window position dan size
+            cv2.moveWindow('Object Distance Detection - Parking System', work_x, work_y, work_width, work_height)
+            print(f"[INFO] Window maximize: {work_width}x{work_height}")
+        except Exception as e:
+            # Fallback: set window size besar
+            cv2.resizeWindow('Object Distance Detection - Parking System', 1280, 960)
+            print(f"[INFO] Window size: 1280x960 (fallback)")
+        
         return True
     
     def stop(self):
@@ -1171,39 +1197,13 @@ class RealTimeDistanceDetector:
             cv2.putText(frame, progress, (progress_x + 50, progress_y + 5),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
-        # BUTTONS (Loop Detector & Tap Card)
-        button_y = legend_y + 95
-        button_w, button_h = 180, 35
-
-        # Loop Detector Button
-        loop_active = self.parking_session.is_button_active("loop_detector")
-        loop_color = (0, 255, 0) if loop_active else (60, 60, 60)
-        loop_text_color = (255, 255, 255) if loop_active else (150, 150, 150)
-
-        cv2.rectangle(frame, (10, button_y), (10 + button_w, button_y + button_h), loop_color, -1)
-        cv2.rectangle(frame, (10, button_y), (10 + button_w, button_y + button_h),
-                     (255, 255, 255), 1 if loop_active else 0)
-        cv2.putText(frame, "L - LOOP DETECTOR", (15, button_y + 23),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.55, loop_text_color, 1)
-
-        # Tap Card Button
-        tap_active = self.parking_session.is_button_active("tap_card")
-        tap_color = (0, 255, 0) if tap_active else (60, 60, 60)
-        tap_text_color = (255, 255, 255) if tap_active else (150, 150, 150)
-
-        cv2.rectangle(frame, (200, button_y), (200 + button_w, button_y + button_h), tap_color, -1)
-        cv2.rectangle(frame, (200, button_y), (200 + button_w, button_y + button_h),
-                     (255, 255, 255), 1 if tap_active else 0)
-        cv2.putText(frame, "T - TAP CARD", (205, button_y + 23),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.55, tap_text_color, 1)
-
         # FOCUS PERCENTAGE DISPLAY (NEW!)
         tracked_id = self.tracker.get_tracked_object_id()
         if tracked_id and result and result.get('tracked_object'):
             obj_area = result['tracked_object'].get('area', 0)
             if self.tracker.camera_view_area > 0:
                 focus_percentage = (obj_area / self.tracker.camera_view_area) * 100
-                
+
                 # Focus bar color based on percentage
                 if focus_percentage < 30:
                     focus_color = (0, 0, 255)  # Merah - Sangat jauh
@@ -1215,7 +1215,7 @@ class RealTimeDistanceDetector:
                     focus_color = (0, 255, 0)  # Hijau - Dekat (optimal)
                 else:
                     focus_color = (255, 0, 0)  # Biru - Sangat dekat
-                
+
                 # Draw FOCUS LOCK indicator with ID
                 cv2.putText(
                     frame,
@@ -1226,7 +1226,7 @@ class RealTimeDistanceDetector:
                     focus_color,
                     2
                 )
-                
+
                 # Draw focus percentage
                 cv2.putText(
                     frame,
@@ -1237,14 +1237,14 @@ class RealTimeDistanceDetector:
                     focus_color,
                     2
                 )
-                
+
                 # Draw focus bar (10 segments)
                 bar_x = 160
                 bar_y = legend_y + 33
                 segment_width = 25
                 total_segments = 10
                 filled_segments = int(focus_percentage / 10)
-                
+
                 for i in range(total_segments):
                     if i < filled_segments:
                         cv2.rectangle(
@@ -1262,13 +1262,13 @@ class RealTimeDistanceDetector:
                             (100, 100, 100),
                             -1
                         )
-        
-        # Tambahkan debug info - status saat ini (pindahkan ke bawah agar tidak overlap)
+
+        # Tambahkan debug info - status saat ini
         tracked_id = self.tracker.get_tracked_object_id()
         if tracked_id:
             status = result.get('status', 'N/A') if result else 'N/A'
             persistence_status = " [PERSISTENCE]" if self.tracker.siaga_persistence_active else ""
-            
+
             # Tambahkan persistence time status
             persistence_time_status = ""
             if self.tracker.persistence_time_active:
@@ -1276,7 +1276,7 @@ class RealTimeDistanceDetector:
                 persistence_remaining = self.tracker.persistence_time_duration - persistence_elapsed
                 if persistence_remaining > 0:
                     persistence_time_status = f" [PERSISTENCE: {persistence_remaining:.1f}s]"
-            
+
             debug_status = f"Status: {status}{persistence_status}{persistence_time_status}"
             cv2.putText(
                 frame,
@@ -1287,42 +1287,84 @@ class RealTimeDistanceDetector:
                 (200, 200, 200),
                 1
             )
-        
+
+        # LEGEND - Pojok Kiri Bawah
+        legend_margin = 10
+        legend_box_width = 160
+        legend_box_height = 85
+        frame_height, frame_width = frame.shape[:2]
+        legend_y_bottom = frame_height - legend_margin - legend_box_height
+
+        # Background box untuk legend
+        cv2.rectangle(frame, (legend_margin, legend_y_bottom),
+                     (legend_margin + legend_box_width, legend_y_bottom + legend_box_height),
+                     (0, 0, 0), -1)
+        cv2.rectangle(frame, (legend_margin, legend_y_bottom),
+                     (legend_margin + legend_box_width, legend_y_bottom + legend_box_height),
+                     (255, 255, 255), 1)
+
+        # Title
+        cv2.putText(frame, "Legend:", (legend_margin + 8, legend_y_bottom + 18),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+
         # Merah - Mendekat
-        cv2.circle(frame, (100, legend_y + 15), 8, (0, 0, 255), -1)
-        cv2.putText(
-            frame,
-            "Mendekat",
-            (115, legend_y + 20),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.5,
-            (255, 255, 255),
-            1
-        )
-        
+        cv2.circle(frame, (legend_margin + 15, legend_y_bottom + 38), 7, (0, 0, 255), -1)
+        cv2.putText(frame, "Mendekat", (legend_margin + 30, legend_y_bottom + 42),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+
         # Hijau - Tetap
-        cv2.circle(frame, (220, legend_y + 15), 8, (0, 255, 0), -1)
-        cv2.putText(
-            frame,
-            "Tetap",
-            (235, legend_y + 20),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.5,
-            (255, 255, 255),
-            1
-        )
-        
+        cv2.circle(frame, (legend_margin + 15, legend_y_bottom + 58), 7, (0, 255, 0), -1)
+        cv2.putText(frame, "Tetap", (legend_margin + 30, legend_y_bottom + 62),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+
         # Biru - Menjauh
-        cv2.circle(frame, (100, legend_y + 35), 8, (255, 0, 0), -1)
-        cv2.putText(
-            frame,
-            "Menjauh",
-            (115, legend_y + 40),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.5,
-            (255, 255, 255),
-            1
-        )
+        cv2.circle(frame, (legend_margin + 85, legend_y_bottom + 38), 7, (255, 0, 0), -1)
+        cv2.putText(frame, "Menjauh", (legend_margin + 100, legend_y_bottom + 42),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+
+        # BUTTONS - Pojok Kanan Bawah (Loop Detector & Tap Card)
+        # Ukuran kecil
+        button_margin = 10
+        button_w, button_h = 130, 28
+        button_spacing = 5
+        
+        # Get frame size
+        frame_height, frame_width = frame.shape[:2]
+        
+        # Position: pojok kanan bawah
+        button_y = frame_height - button_margin - button_h
+        button1_x = frame_width - button_w - button_margin - button_w - button_spacing  # Loop Detector
+        button2_x = frame_width - button_w - button_margin  # Tap Card
+
+        # Loop Detector Button
+        loop_active = self.parking_session.is_button_active("loop_detector")
+        loop_color = (0, 255, 0) if loop_active else (50, 50, 50)
+        loop_text_color = (255, 255, 255) if loop_active else (120, 120, 120)
+
+        cv2.rectangle(frame, (button1_x, button_y), 
+                     (button1_x + button_w, button_y + button_h), 
+                     loop_color, -1)
+        cv2.rectangle(frame, (button1_x, button_y),
+                     (button1_x + button_w, button_y + button_h),
+                     (255, 255, 255), 1 if loop_active else 0)
+        cv2.putText(frame, "L - LOOP", 
+                   (button1_x + 8, button_y + 19),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.45, loop_text_color, 1)
+
+        # Tap Card Button
+        tap_active = self.parking_session.is_button_active("tap_card")
+        tap_color = (0, 255, 0) if tap_active else (50, 50, 50)
+        tap_text_color = (255, 255, 255) if tap_active else (120, 120, 120)
+
+        cv2.rectangle(frame, (button2_x, button_y), 
+                     (button2_x + button_w, button_y + button_h), 
+                     tap_color, -1)
+        cv2.rectangle(frame, (button2_x, button_y),
+                     (button2_x + button_w, button_y + button_h),
+                     (255, 255, 255), 1 if tap_active else 0)
+        cv2.putText(frame, "T - TAP", 
+                   (button2_x + 12, button_y + 19),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.45, tap_text_color, 1)
     
     def run(self):
         """Run real-time detection."""
@@ -1394,7 +1436,7 @@ class RealTimeDistanceDetector:
                     # Draw info panel (pass result sebagai parameter)
                     self.draw_info_panel(frame, result)
 
-                    # Show frame
+                    # Show frame (tanpa resize - tetap 640x480)
                     cv2.imshow('Object Distance Detection - Parking System', frame)
 
                 # Handle keyboard

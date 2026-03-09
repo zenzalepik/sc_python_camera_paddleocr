@@ -52,6 +52,12 @@ class ObjectDistanceTracker:
         self.siaga_persistence_start_time = None  # Waktu mulai persistence
         self.siaga_persistence_delay = 0.02  # 20ms delay sebelum clear SIAGA
         
+        # GRACE PERIOD - untuk handle object masih terdeteksi setelah SIAGA hilang
+        self.siaga_cleared_time = None  # Waktu SIAGA cleared
+        self.grace_period_duration = 1.5  # 1.5 detik grace period
+        self.grace_period_active = False  # Mode grace period
+        self.grace_period_object_bbox = None  # Last bbox object saat grace period
+        
         # Object counter untuk ID
         self.object_counter = 0
         
@@ -101,8 +107,13 @@ class ObjectDistanceTracker:
                 # Object hilang tapi SIAGA masih aktif (masih dalam hold time)
                 self._handle_no_detection(current_time)
                 return {'tracked_object': None, 'status': 'siaga_active_no_object'}
+        elif self.grace_period_active:
+            # GRACE PERIOD (1.5 detik): Object masih terdeteksi, PERTAHANKAN ID!
+            # Jangan ganti object walaupun SIAGA sudah cleared
+            # Ini handle kasus object diam → bergerak
+            pass  # Tetap track object yang sama
         else:
-            # SIAGA cleared, boleh pilih object baru
+            # SIAGA cleared dan grace period habis, boleh pilih object baru
             if self.tracked_object_id is None or self._is_different_object(largest_detection):
                 if self.tracked_object_id is None:
                     self.object_counter += 1
@@ -112,7 +123,7 @@ class ObjectDistanceTracker:
                     self.object_counter += 1
                     self.tracked_object_id = f"PERSON_{self.object_counter}"
                     print(f"\n[🎯 NEW TRACK] Switched to {self.tracked_object_id}")
-                
+
                 self.tracked_object_history = []
         
         # Update tracked object info
@@ -238,14 +249,20 @@ class ObjectDistanceTracker:
                     print(f"\n[⏱️ PERSISTENCE] {persistence_duration*1000:.1f}ms/20ms - SIAGA masih dipertahankan!")
                     self.siaga_expire_time = None
                 else:
-                    # Sudah 20ms → Clear SIAGA
+                    # Sudah 20ms → Clear SIAGA, START GRACE PERIOD 1.5s
                     self.siaga_active = False
                     self.approaching_consecutive_count = 0
                     self.siaga_expire_time = None
                     self.last_siaga_area = 0
                     self.siaga_persistence_active = False
                     self.siaga_persistence_start_time = None
-                    print(f"\n[✓ SIAGA CLEARED] {self.tracked_object_id} - 20ms persistence complete!")
+                    
+                    # START GRACE PERIOD!
+                    self.siaga_cleared_time = current_time
+                    self.grace_period_active = True
+                    self.grace_period_object_bbox = self.tracked_object_bbox
+                    
+                    print(f"\n[⏱️ GRACE PERIOD] 1.5s timer started - ID dipertahankan!")
             else:
                 # Object MENJAUH (tidak dalam persistence) → RESET SIAGA langsung!
                 if self.siaga_active:
@@ -255,7 +272,13 @@ class ObjectDistanceTracker:
                     self.last_siaga_area = 0
                     self.siaga_persistence_active = False
                     self.siaga_persistence_start_time = None
-                    print(f"\n[✓ SIAGA CLEARED] {self.tracked_object_id} MENJAUH - SIAGA direset!")
+                    
+                    # START GRACE PERIOD!
+                    self.siaga_cleared_time = current_time
+                    self.grace_period_active = True
+                    self.grace_period_object_bbox = self.tracked_object_bbox
+                    
+                    print(f"\n[⏱️ GRACE PERIOD] 1.5s timer started - ID dipertahankan!")
                 self.approaching_consecutive_count = 0
         else:
             # STABLE - cek persistence
@@ -289,7 +312,20 @@ class ObjectDistanceTracker:
             print(f"\n[🔄 RESET] Tracking direset!")
     
     def check_siaga_expire(self, current_time):
-        """Check apakah SIAGA sudah expire."""
+        """Check apakah SIAGA sudah expire dan handle grace period."""
+        # Check grace period (1.5 detik)
+        if self.grace_period_active and self.siaga_cleared_time is not None:
+            grace_elapsed = current_time - self.siaga_cleared_time
+            
+            if grace_elapsed >= self.grace_period_duration:
+                # Grace period 1.5 detik HABIS!
+                self.grace_period_active = False
+                self.siaga_cleared_time = None
+                self.grace_period_object_bbox = None
+                print(f"\n[✓ GRACE PERIOD DONE] 1.5s elapsed - ID lock released!")
+            # else: Masih dalam grace period, ID masih dipertahankan
+        
+        # Check SIAGA expire (object hilang)
         if self.siaga_active and self.siaga_expire_time is not None:
             if current_time >= self.siaga_expire_time:
                 self.siaga_active = False
@@ -299,7 +335,7 @@ class ObjectDistanceTracker:
                 self.tracked_object_history = []
                 self.siaga_clear_time = current_time
                 self.siaga_expire_time = None
-                
+
                 print(f"\n[✓ SIAGA CLEARED] Siap track object baru")
     
     def is_siaga_active(self):
@@ -613,11 +649,22 @@ class RealTimeDistanceDetector:
                 else:
                     focus_color = (255, 0, 0)  # Biru - Sangat dekat
                 
-                # Draw focus bar text
+                # Draw FOCUS LOCK indicator with ID
                 cv2.putText(
                     frame,
-                    f"🎯 FOCUS: {focus_percentage:.1f}%",
+                    f"🎯 FOCUS LOCK: {tracked_id}",
                     (10, legend_y + 20),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.7,
+                    focus_color,
+                    2
+                )
+                
+                # Draw focus percentage
+                cv2.putText(
+                    frame,
+                    f"   {focus_percentage:.1f}%",
+                    (10, legend_y + 42),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.6,
                     focus_color,
@@ -649,16 +696,25 @@ class RealTimeDistanceDetector:
                             -1
                         )
         
-        # Tambahkan debug info - status saat ini
+        # Tambahkan debug info - status saat ini (pindahkan ke bawah agar tidak overlap)
         tracked_id = self.tracker.get_tracked_object_id()
         if tracked_id:
             status = result.get('status', 'N/A') if result else 'N/A'
             persistence_status = " [PERSISTENCE]" if self.tracker.siaga_persistence_active else ""
-            debug_status = f"Tracking: {tracked_id} | Status: {status}{persistence_status}"
+            
+            # Tambahkan grace period status
+            grace_status = ""
+            if self.tracker.grace_period_active:
+                grace_elapsed = time.time() - (self.tracker.siaga_cleared_time or time.time())
+                grace_remaining = self.tracker.grace_period_duration - grace_elapsed
+                if grace_remaining > 0:
+                    grace_status = f" [GRACE: {grace_remaining:.1f}s]"
+            
+            debug_status = f"Status: {status}{persistence_status}{grace_status}"
             cv2.putText(
                 frame,
                 debug_status,
-                (10, legend_y + 55),
+                (10, legend_y + 75),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.5,
                 (200, 200, 200),

@@ -25,17 +25,18 @@ class ObjectDistanceTracker:
     - SIAGA harus hilang dulu sebelum track object baru
     """
 
-    def __init__(self, max_history=30, siaga_frame_threshold=3, siaga_hold_time=3.0):
+    def __init__(self, max_history=30, siaga_frame_threshold=3, siaga_hold_time=3.0, target_classes=None):
         self.max_history = max_history
         self.siaga_frame_threshold = siaga_frame_threshold
         self.siaga_hold_time = siaga_hold_time
-        
+        self.target_classes = target_classes if target_classes else [0]  # Default person only
+
         # Object tracking dengan ID unik
         self.tracked_object_id = None
         self.tracked_object_history = []
         self.tracked_object_bbox = None
         self.tracked_object_area = 0  # Area object yang di-track
-        
+
         # Camera view info untuk focus percentage
         self.camera_view_area = 0  # Total area camera view
         
@@ -70,18 +71,18 @@ class ObjectDistanceTracker:
     def update(self, detections):
         """Update tracker dengan deteksi baru."""
         current_time = time.time()
-        
-        # Filter hanya person (class_id = 0)
-        person_detections = [d for d in detections if d['class_id'] == 0]
-        
-        # Jika tidak ada person, handle SIAGA timer
-        if not person_detections:
+
+        # Filter hanya target classes yang dipilih
+        target_detections = [d for d in detections if d['class_id'] in self.target_classes]
+
+        # Jika tidak ada object target, handle SIAGA timer
+        if not target_detections:
             self._handle_no_detection(current_time)
             return {'tracked_object': None, 'status': 'no_detection'}
-        
+
         # Pilih object TERBESAR (area terbesar = paling dekat)
         largest_detection = max(
-            person_detections,
+            target_detections,
             key=lambda d: (d['bbox'][2] - d['bbox'][0]) * (d['bbox'][3] - d['bbox'][1])
         )
         
@@ -123,11 +124,13 @@ class ObjectDistanceTracker:
             if self.tracked_object_id is None or self._is_different_object(largest_detection):
                 if self.tracked_object_id is None:
                     self.object_counter += 1
-                    self.tracked_object_id = f"PERSON_{self.object_counter}"
+                    class_name = largest_detection.get('class_name', 'UNKNOWN').upper()
+                    self.tracked_object_id = f"{class_name}_{self.object_counter}"
                     print(f"\n[🎯 NEW TRACK] Started tracking {self.tracked_object_id}")
                 else:
                     self.object_counter += 1
-                    self.tracked_object_id = f"PERSON_{self.object_counter}"
+                    class_name = largest_detection.get('class_name', 'UNKNOWN').upper()
+                    self.tracked_object_id = f"{class_name}_{self.object_counter}"
                     print(f"\n[🎯 NEW TRACK] Switched to {self.tracked_object_id}")
 
                 self.tracked_object_history = []
@@ -390,19 +393,21 @@ class RealTimeDistanceDetector:
         print("Loading YOLO model...")
         self.model = YOLO('yolov8n.pt')
         print("[OK] YOLO model loaded!")
-        
-        # Initialize tracker
+
+        # Target classes untuk tracking:
+        # 0=person, 67=cell phone, 1=bicycle, 2=car, 3=motorcycle, 5=bus, 7=truck
+        self.target_classes = [0, 67, 1, 2, 3, 5, 7]
+
+        # Initialize tracker dengan target classes
         self.tracker = ObjectDistanceTracker(
             max_history=30,
             siaga_frame_threshold=3,
-            siaga_hold_time=3.0
+            siaga_hold_time=3.0,
+            target_classes=self.target_classes
         )
-        
+
         # Class names dari YOLO
         self.class_names = self.model.names
-        
-        # Target classes untuk tracking (0 = person)
-        self.target_classes = [0]
         
         # Video capture
         self.cap = None
@@ -793,18 +798,21 @@ class RealTimeDistanceDetector:
         """Run real-time detection."""
         if not self.start():
             return
-        
+
         print("\n" + "="*70)
-        print("Real-time Object Distance Detection - Single Object Tracking")
+        print("Real-time Object Distance Detection - Multi-Class Tracking")
         print("="*70)
-        print("\nControls:")
-        print("  - Press 'q' to quit")
-        print("  - Press 's' to save snapshot")
-        print("  - Press '+' to increase confidence threshold")
-        print("  - Press '-' to decrease confidence threshold")
+        print("\nTarget Classes:")
+        print("  - 0: person (orang)")
+        print("  - 1: bicycle (sepeda)")
+        print("  - 2: car (mobil)")
+        print("  - 3: motorcycle (motor)")
+        print("  - 5: bus (bus)")
+        print("  - 7: truck (truk)")
+        print("  - 67: cell phone (ponsel)")
         print("\nLogic:")
-        print("  1. Track 1 object TERBESAR (paling dekat)")
-        print("  2. Beri ID unik (PERSON_1, PERSON_2, dst)")
+        print("  1. Track 1 object TERBESAR (paling dekat) dari semua classes")
+        print("  2. Beri ID unik (PERSON_1, CAR_2, MOTORCYCLE_3, dst)")
         print("  3. SIAGA aktif setelah 3 frame MENDEKAT")
         print("  4. SIAGA hold 3 detik setelah object hilang")
         print("  5. SIAGA CLEARED → Boleh track object baru")
@@ -870,14 +878,16 @@ class RealTimeDistanceDetector:
 def main():
     """Main function."""
     print("="*70)
-    print("Object Distance Detection with YOLO - Single Object Tracking")
+    print("Object Distance Detection with YOLO - Multi-Class Tracking")
     print("="*70)
-    
+    print("\nTarget Classes: person, cell phone, bicycle, car, motorcycle, bus, truck")
+    print("="*70)
+
     detector = RealTimeDistanceDetector(
         camera_id=0,
         confidence_threshold=0.5
     )
-    
+
     detector.run()
 
 

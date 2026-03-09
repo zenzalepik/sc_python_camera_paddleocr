@@ -46,17 +46,23 @@ class ObjectDistanceTracker:
         self.siaga_expire_time = None
         self.siaga_clear_time = None
         
+        # MOVING AWAY DETECTION - untuk handle SIAGA hilang karena menjauh
+        self.moving_away_detected = {}  # Track moving_away per detik: {second_count: has_detection}
+        self.moving_away_start_time = None  # Waktu mulai hitung 5 detik
+        self.moving_away_seconds_count = 0  # Jumlah detik yang valid (max 5)
+        self.last_moving_away_second = -1  # Detik terakhir terdeteksi moving_away
+        
         # SIAGA PERSISTENCE - untuk handle object sangat dekat
         self.last_siaga_area = 0  # Area terakhir saat SIAGA aktif
         self.siaga_persistence_active = False  # Mode persistence
         self.siaga_persistence_start_time = None  # Waktu mulai persistence
         self.siaga_persistence_delay = 0.02  # 20ms delay sebelum clear SIAGA
         
-        # GRACE PERIOD - untuk handle object masih terdeteksi setelah SIAGA hilang
+        # PERSISTENCE TIME - untuk handle object masih terdeteksi setelah SIAGA hilang
         self.siaga_cleared_time = None  # Waktu SIAGA cleared
-        self.grace_period_duration = 1.5  # 1.5 detik grace period
-        self.grace_period_active = False  # Mode grace period
-        self.grace_period_object_bbox = None  # Last bbox object saat grace period
+        self.persistence_time_duration = 1.5  # 1.5 detik persistence time
+        self.persistence_time_active = False  # Mode persistence time
+        self.persistence_time_object_bbox = None  # Last bbox object saat persistence time
         
         # Object counter untuk ID
         self.object_counter = 0
@@ -107,13 +113,13 @@ class ObjectDistanceTracker:
                 # Object hilang tapi SIAGA masih aktif (masih dalam hold time)
                 self._handle_no_detection(current_time)
                 return {'tracked_object': None, 'status': 'siaga_active_no_object'}
-        elif self.grace_period_active:
-            # GRACE PERIOD (1.5 detik): Object masih terdeteksi, PERTAHANKAN ID!
+        elif self.persistence_time_active:
+            # PERSISTENCE TIME (1.5 detik): Object masih terdeteksi, PERTAHANKAN ID!
             # Jangan ganti object walaupun SIAGA sudah cleared
             # Ini handle kasus object diam → bergerak
             pass  # Tetap track object yang sama
         else:
-            # SIAGA cleared dan grace period habis, boleh pilih object baru
+            # SIAGA cleared dan persistence time habis, boleh pilih object baru
             if self.tracked_object_id is None or self._is_different_object(largest_detection):
                 if self.tracked_object_id is None:
                     self.object_counter += 1
@@ -220,13 +226,21 @@ class ObjectDistanceTracker:
         
         LOGIKA BARU:
         - SIAGA aktif setelah 3 frame MENDEKAT
-        - SIAGA HILANG jika object MENJAUH
+        - SIAGA HILANG jika object MENJAUH selama 5 detik berturut-turut
+          (setiap detik HARUS ada minimal 1 frame MENJAUH)
         - SIAGA hold 3 detik jika object hilang
         - SIAGA PERSISTENCE: Jika object ≥80% camera view, tunggu 20ms sebelum clear
         """
         # Update last_siaga_area jika SIAGA aktif
         if self.siaga_active and self.tracked_object_area > 0:
             self.last_siaga_area = self.tracked_object_area
+        
+        # Hitung detik saat ini untuk moving_away tracking
+        if self.moving_away_start_time is None:
+            self.moving_away_start_time = current_time
+        
+        elapsed_time = current_time - self.moving_away_start_time
+        current_second = int(elapsed_time)  # Detik ke-0, 1, 2, 3, 4, 5
         
         if status == 'approaching':
             self.approaching_consecutive_count += 1
@@ -239,32 +253,45 @@ class ObjectDistanceTracker:
                 self.siaga_expire_time = None
                 self.siaga_persistence_active = False
                 self.siaga_persistence_start_time = None
+                
+                # Reset moving_away counter
+                self.moving_away_detected = {}
+                self.moving_away_seconds_count = 0
+                self.moving_away_start_time = None
+                self.last_moving_away_second = -1
+                
         elif status == 'moving_away':
-            # Object MENJAUH → Cek persistence dulu
-            if self.siaga_persistence_active:
-                # Cek apakah sudah 20ms
-                persistence_duration = current_time - self.siaga_persistence_start_time
-                if persistence_duration < self.siaga_persistence_delay:
-                    # Belum 20ms → PERTAHANKAN SIAGA!
-                    print(f"\n[⏱️ PERSISTENCE] {persistence_duration*1000:.1f}ms/20ms - SIAGA masih dipertahankan!")
-                    self.siaga_expire_time = None
-                else:
-                    # Sudah 20ms → Clear SIAGA, START GRACE PERIOD 1.5s
-                    self.siaga_active = False
-                    self.approaching_consecutive_count = 0
-                    self.siaga_expire_time = None
-                    self.last_siaga_area = 0
-                    self.siaga_persistence_active = False
-                    self.siaga_persistence_start_time = None
-                    
-                    # START GRACE PERIOD!
-                    self.siaga_cleared_time = current_time
-                    self.grace_period_active = True
-                    self.grace_period_object_bbox = self.tracked_object_bbox
-                    
-                    print(f"\n[⏱️ GRACE PERIOD] 1.5s timer started - ID dipertahankan!")
-            else:
-                # Object MENJAUH (tidak dalam persistence) → RESET SIAGA langsung!
+            # Object MENJAUH → Track per detik untuk 5 detik requirement
+            if self.moving_away_start_time is None:
+                self.moving_away_start_time = current_time
+                current_second = 0
+            
+            # Mark detik ini sebagai terdeteksi moving_away
+            if current_second not in self.moving_away_detected:
+                self.moving_away_detected[current_second] = True
+                print(f"\n[📉 MOVING AWAY] Detik ke-{current_second}/5 - terdeteksi!")
+            
+            # Check apakah detik ini berbeda dari last second (artinya masuk detik baru)
+            if current_second > self.last_moving_away_second:
+                self.last_moving_away_second = current_second
+                
+                # Check apakah detik sebelumnya sudah terpenuhi
+                if current_second >= 1:
+                    prev_second = current_second - 1
+                    if prev_second in self.moving_away_detected:
+                        # Detik sebelumnya valid!
+                        self.moving_away_seconds_count = current_second
+                        print(f"\n[⏱️ MOVING AWAY] {self.moving_away_seconds_count}/5 detik valid")
+                    else:
+                        # Detik sebelumnya TIDAK valid → RESET!
+                        print(f"\n[⚠️ MOVING AWAY] Detik ke-{prev_second} tidak valid - RESET!")
+                        self.moving_away_detected = {current_second: True}
+                        self.moving_away_seconds_count = 0
+                        self.moving_away_start_time = current_time
+            
+            # Check apakah sudah 5 detik valid
+            if self.moving_away_seconds_count >= 5:
+                # 5 detik terpenuhi! Clear SIAGA
                 if self.siaga_active:
                     self.siaga_active = False
                     self.approaching_consecutive_count = 0
@@ -273,13 +300,18 @@ class ObjectDistanceTracker:
                     self.siaga_persistence_active = False
                     self.siaga_persistence_start_time = None
                     
-                    # START GRACE PERIOD!
+                    # START PERSISTENCE TIME!
                     self.siaga_cleared_time = current_time
-                    self.grace_period_active = True
-                    self.grace_period_object_bbox = self.tracked_object_bbox
+                    self.persistence_time_active = True
+                    self.persistence_time_object_bbox = self.tracked_object_bbox
                     
-                    print(f"\n[⏱️ GRACE PERIOD] 1.5s timer started - ID dipertahankan!")
-                self.approaching_consecutive_count = 0
+                    print(f"\n[✓ SIAGA CLEARED] 5 detik moving_away terpenuhi!")
+                    
+                    # Reset moving_away counter
+                    self.moving_away_detected = {}
+                    self.moving_away_seconds_count = 0
+                    self.moving_away_start_time = None
+                    self.last_moving_away_second = -1
         else:
             # STABLE - cek persistence
             if self.siaga_persistence_active:
@@ -312,18 +344,18 @@ class ObjectDistanceTracker:
             print(f"\n[🔄 RESET] Tracking direset!")
     
     def check_siaga_expire(self, current_time):
-        """Check apakah SIAGA sudah expire dan handle grace period."""
-        # Check grace period (1.5 detik)
-        if self.grace_period_active and self.siaga_cleared_time is not None:
-            grace_elapsed = current_time - self.siaga_cleared_time
+        """Check apakah SIAGA sudah expire dan handle persistence time."""
+        # Check persistence time (1.5 detik)
+        if self.persistence_time_active and self.siaga_cleared_time is not None:
+            persistence_elapsed = current_time - self.siaga_cleared_time
             
-            if grace_elapsed >= self.grace_period_duration:
-                # Grace period 1.5 detik HABIS!
-                self.grace_period_active = False
+            if persistence_elapsed >= self.persistence_time_duration:
+                # Persistence time 1.5 detik HABIS!
+                self.persistence_time_active = False
                 self.siaga_cleared_time = None
-                self.grace_period_object_bbox = None
-                print(f"\n[✓ GRACE PERIOD DONE] 1.5s elapsed - ID lock released!")
-            # else: Masih dalam grace period, ID masih dipertahankan
+                self.persistence_time_object_bbox = None
+                print(f"\n[✓ PERSISTENCE TIME DONE] 1.5s elapsed - ID lock released!")
+            # else: Masih dalam persistence time, ID masih dipertahankan
         
         # Check SIAGA expire (object hilang)
         if self.siaga_active and self.siaga_expire_time is not None:
@@ -702,15 +734,15 @@ class RealTimeDistanceDetector:
             status = result.get('status', 'N/A') if result else 'N/A'
             persistence_status = " [PERSISTENCE]" if self.tracker.siaga_persistence_active else ""
             
-            # Tambahkan grace period status
-            grace_status = ""
-            if self.tracker.grace_period_active:
-                grace_elapsed = time.time() - (self.tracker.siaga_cleared_time or time.time())
-                grace_remaining = self.tracker.grace_period_duration - grace_elapsed
-                if grace_remaining > 0:
-                    grace_status = f" [GRACE: {grace_remaining:.1f}s]"
+            # Tambahkan persistence time status
+            persistence_time_status = ""
+            if self.tracker.persistence_time_active:
+                persistence_elapsed = time.time() - (self.tracker.siaga_cleared_time or time.time())
+                persistence_remaining = self.tracker.persistence_time_duration - persistence_elapsed
+                if persistence_remaining > 0:
+                    persistence_time_status = f" [PERSISTENCE: {persistence_remaining:.1f}s]"
             
-            debug_status = f"Status: {status}{persistence_status}{grace_status}"
+            debug_status = f"Status: {status}{persistence_status}{persistence_time_status}"
             cv2.putText(
                 frame,
                 debug_status,

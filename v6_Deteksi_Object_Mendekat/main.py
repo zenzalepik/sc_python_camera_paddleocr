@@ -969,7 +969,7 @@ class RealTimeDistanceDetector:
 
         # Draw bounding box
         x1, y1, x2, y2 = map(int, bbox)
-        cv2.rectangle(frame, (x1, y1), (x2, y2), color, 3)
+        cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
 
         # Status text
         if status == 'approaching':
@@ -984,61 +984,61 @@ class RealTimeDistanceDetector:
 
         # Background untuk label
         (label_w, label_h), baseline = cv2.getTextSize(
-            label, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2
+            label, cv2.FONT_HERSHEY_SIMPLEX, 0.35, 1
         )
         cv2.rectangle(
             frame,
-            (x1, y1 - label_h - baseline - 5),
+            (x1, y1 - label_h - baseline - 3),
             (x1 + label_w, y1),
             color,
             -1
         )
-        
+
         # Text label
         cv2.putText(
             frame,
             label,
             (x1, y1 - baseline),
             cv2.FONT_HERSHEY_SIMPLEX,
-            0.7,
+            0.35,
             (255, 255, 255),
-            2
+            1
         )
-        
+
         # SIAGA indicator (jika aktif)
         if is_siaga:
             siaga_text = "⚠️ SIAGA"
             (siaga_w, siaga_h), siaga_baseline = cv2.getTextSize(
-                siaga_text, cv2.FONT_HERSHEY_SIMPLEX, 0.9, 3
+                siaga_text, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1
             )
-            
-            siaga_y = y1 - label_h - baseline - 10 - siaga_h - 5
+
+            siaga_y = y1 - label_h - baseline - 5 - siaga_h - 3
             cv2.rectangle(
                 frame,
                 (x1, siaga_y),
-                (x1 + siaga_w + 10, siaga_y + siaga_h + 5),
+                (x1 + siaga_w + 6, siaga_y + siaga_h + 3),
                 (0, 140, 255),
                 -1
             )
-            
+
             # Blinking border
             if int(time.time() * 3) % 2 == 0:
                 cv2.rectangle(
                     frame,
                     (x1, siaga_y),
-                    (x1 + siaga_w + 10, siaga_y + siaga_h + 5),
+                    (x1 + siaga_w + 6, siaga_y + siaga_h + 3),
                     (0, 0, 255),
-                    2
+                    1
                 )
-            
+
             cv2.putText(
                 frame,
                 siaga_text,
-                (x1 + 5, siaga_y + siaga_h),
+                (x1 + 3, siaga_y + siaga_h),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.9,
+                0.45,
                 (255, 255, 255),
-                3
+                1
             )
 
     def draw_info_panel(self, frame, result):
@@ -1053,149 +1053,81 @@ class RealTimeDistanceDetector:
         # Check SIAGA status
         is_siaga = self.tracker.is_siaga_active()
         siaga_cleared = self.tracker.siaga_clear_time is not None
-        
-        # Panel height
-        panel_height = 120 if (is_siaga or siaga_cleared) else 100
+
+        # Panel height (tanpa SIAGA di dalam box)
+        panel_height = 65
         cv2.rectangle(frame, (0, 0), (450, panel_height), (0, 0, 0), -1)
-        cv2.rectangle(frame, (0, 0), (450, panel_height), (255, 255, 255), 2)
+        cv2.rectangle(frame, (0, 0), (450, panel_height), (255, 255, 255), 1)
         
         # FPS
         cv2.putText(
             frame,
             f"FPS: {self.fps:.1f}",
-            (10, 25),
+            (10, 18),
             cv2.FONT_HERSHEY_SIMPLEX,
-            0.7,
+            0.35,
             (0, 255, 0),
-            2
-        )
-        
-        # Timestamp
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        cv2.putText(
-            frame,
-            f"Time: {timestamp}",
-            (10, 50),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.6,
-            (255, 255, 255),
             1
         )
-        
-        # SIAGA ALERT
+
+        # SIAGA ALERT - Di atas tengah (di luar box hitam)
         if is_siaga:
             blink_color = (0, 0, 255) if int(time.time() * 4) % 2 == 0 else (0, 140, 255)
-            
-            cv2.rectangle(
-                frame,
-                (10, 65),
-                (440, 95),
-                blink_color,
-                -1
-            )
-            
+            timestamp = datetime.now().strftime("%H:%M:%S")
+
+            # Get frame width for centering
+            frame_height, frame_width = frame.shape[:2]
+            siaga_text = "⚠️ SIAGA: Object MENDEKAT!"
+            (siaga_w, siaga_h), _ = cv2.getTextSize(siaga_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
+            siaga_x = (frame_width - siaga_w) // 2
+
+            # Background box (blinking)
+            cv2.rectangle(frame, (siaga_x - 10, 10), (siaga_x + siaga_w + 10, 45), blink_color, -1)
+            cv2.rectangle(frame, (siaga_x - 10, 10), (siaga_x + siaga_w + 10, 45), (255, 255, 255), 2)
+
             cv2.putText(
                 frame,
-                f"⚠️ SIAGA: Object MENDEKAT!",
-                (20, 87),
+                siaga_text,
+                (siaga_x, 33),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.7,
+                0.5,
                 (255, 255, 255),
                 2
             )
-            
+
             print(f"\r[⚠️ SIAGA ACTIVE] Object approaching - {timestamp}", end='')
-        
-        # SIAGA CLEARED feedback
+
+        # SIAGA CLEARED feedback - Di atas tengah (di luar box hitam)
         elif siaga_cleared:
             if current_time - self.tracker.siaga_clear_time <= 2.0:
-                cv2.rectangle(
-                    frame,
-                    (10, 65),
-                    (440, 95),
-                    (0, 255, 0),
-                    -1
-                )
-                
+                timestamp = datetime.now().strftime("%H:%M:%S")
+
+                # Get frame width for centering
+                frame_height, frame_width = frame.shape[:2]
+                siaga_text = "✓ SIAGA CLEARED - Siap track object baru"
+                (siaga_w, siaga_h), _ = cv2.getTextSize(siaga_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
+                siaga_x = (frame_width - siaga_w) // 2
+
+                # Background box (green)
+                cv2.rectangle(frame, (siaga_x - 10, 10), (siaga_x + siaga_w + 10, 45), (0, 255, 0), -1)
+                cv2.rectangle(frame, (siaga_x - 10, 10), (siaga_x + siaga_w + 10, 45), (255, 255, 255), 2)
+
                 cv2.putText(
                     frame,
-                    f"✓ SIAGA CLEARED - Siap track object baru",
-                    (20, 87),
+                    siaga_text,
+                    (siaga_x, 33),
                     cv2.FONT_HERSHEY_SIMPLEX,
-                    0.7,
+                    0.5,
                     (255, 255, 255),
                     2
                 )
-                
+
                 print(f"\r[✓ SIAGA CLEARED] Siap track object baru - {timestamp}", end='')
             else:
                 self.tracker.siaga_clear_time = None
-        
-        # Legend
-        legend_y = 105 if not (is_siaga or siaga_cleared) else 105
-        cv2.putText(
-            frame,
-            "Legend:",
-            (10, legend_y),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.6,
-            (255, 255, 255),
-            1
-        )
 
-        # PARKING SESSION PANEL
-        if self.parking_session.is_active:
-            session_y = legend_y + 20
-            panel_width = 430
-            panel_height = 85
-
-            # Background panel
-            cv2.rectangle(frame, (10, session_y), (10 + panel_width, session_y + panel_height),
-                         (30, 30, 30), -1)
-            cv2.rectangle(frame, (10, session_y), (10 + panel_width, session_y + panel_height),
-                         (0, 255, 255), 2)
-
-            # Session title
-            cv2.putText(frame, f"🅿️ PARKING SESSION", (20, session_y + 20),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-
-            # Vehicle info
-            vehicle_info = f"Vehicle: {self.parking_session.vehicle_id}"
-            cv2.putText(frame, vehicle_info, (20, session_y + 42),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1)
-
-            # Phase info
-            phase_names = {
-                ParkingPhase.FASE1_SIAGA: "FASE 1: SIAGA (Mendekat)",
-                ParkingPhase.FASE2_TETAP: "FASE 2: TETAP (Berhenti)",
-                ParkingPhase.FASE3_LOOP: "FASE 3: Siap LOOP DETECTOR",
-                ParkingPhase.FASE4_TAP: "FASE 4: Siap TAP CARD",
-            }
-            phase_name = phase_names.get(self.parking_session.phase, "UNKNOWN")
-            cv2.putText(frame, phase_name, (20, session_y + 62),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1)
-
-            # Progress bar
-            progress = self.parking_session.get_progress()
-            total_frames = 14  # 3+5+3+3
-            progress_width = 150
-            progress_x = 280
-            progress_y = session_y + 45
-
-            # Progress background
-            cv2.rectangle(frame, (progress_x, progress_y - 10),
-                         (progress_x + progress_width, progress_y + 10),
-                         (60, 60, 60), -1)
-
-            # Progress filled
-            filled_width = int(progress_width * (int(progress.split('/')[0]) / total_frames))
-            cv2.rectangle(frame, (progress_x, progress_y - 10),
-                         (progress_x + filled_width, progress_y + 10),
-                         (0, 255, 0), -1)
-
-            # Progress text
-            cv2.putText(frame, progress, (progress_x + 50, progress_y + 5),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+        # Define legend_y for positioning (removed Legend text)
+        legend_y = 75 if not (is_siaga or siaga_cleared) else 75
 
         # FOCUS PERCENTAGE DISPLAY (NEW!)
         tracked_id = self.tracker.get_tracked_object_id()
@@ -1220,28 +1152,28 @@ class RealTimeDistanceDetector:
                 cv2.putText(
                     frame,
                     f"🎯 FOCUS LOCK: {tracked_id}",
-                    (10, legend_y + 20),
+                    (10, legend_y + 14),
                     cv2.FONT_HERSHEY_SIMPLEX,
-                    0.7,
+                    0.35,
                     focus_color,
-                    2
+                    1
                 )
 
                 # Draw focus percentage
                 cv2.putText(
                     frame,
                     f"   {focus_percentage:.1f}%",
-                    (10, legend_y + 42),
+                    (10, legend_y + 30),
                     cv2.FONT_HERSHEY_SIMPLEX,
-                    0.6,
+                    0.3,
                     focus_color,
-                    2
+                    1
                 )
 
                 # Draw focus bar (10 segments)
                 bar_x = 160
-                bar_y = legend_y + 33
-                segment_width = 25
+                bar_y = legend_y + 20
+                segment_width = 20
                 total_segments = 10
                 filled_segments = int(focus_percentage / 10)
 
@@ -1250,7 +1182,7 @@ class RealTimeDistanceDetector:
                         cv2.rectangle(
                             frame,
                             (bar_x + i * segment_width, bar_y),
-                            (bar_x + (i + 1) * segment_width - 2, bar_y + 12),
+                            (bar_x + (i + 1) * segment_width - 2, bar_y + 8),
                             focus_color,
                             -1
                         )
@@ -1258,7 +1190,7 @@ class RealTimeDistanceDetector:
                         cv2.rectangle(
                             frame,
                             (bar_x + i * segment_width, bar_y),
-                            (bar_x + (i + 1) * segment_width - 2, bar_y + 12),
+                            (bar_x + (i + 1) * segment_width - 2, bar_y + 8),
                             (100, 100, 100),
                             -1
                         )
@@ -1281,17 +1213,67 @@ class RealTimeDistanceDetector:
             cv2.putText(
                 frame,
                 debug_status,
-                (10, legend_y + 75),
+                (10, legend_y + 55),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.5,
+                0.3,
                 (200, 200, 200),
                 1
             )
 
-        # LEGEND - Pojok Kiri Bawah
+        # FASE & PROGRESS BAR - Di atas Legend (Pojok Kiri Bawah, Horizontal)
+        if self.parking_session.is_active:
+            fase_margin = 10
+            fase_box_width = 220
+            fase_box_height = 35
+            legend_box_height = 32  # Same as legend box
+            frame_height, frame_width = frame.shape[:2]
+            fase_y_bottom = frame_height - fase_margin - legend_box_height - 5 - fase_box_height
+
+            # Background box untuk fase
+            cv2.rectangle(frame, (fase_margin, fase_y_bottom),
+                         (fase_margin + fase_box_width, fase_y_bottom + fase_box_height),
+                         (30, 30, 30), -1)
+            cv2.rectangle(frame, (fase_margin, fase_y_bottom),
+                         (fase_margin + fase_box_width, fase_y_bottom + fase_box_height),
+                         (0, 255, 255), 1)
+
+            # Phase name (kiri)
+            phase_names = {
+                ParkingPhase.FASE1_SIAGA: "FASE 1",
+                ParkingPhase.FASE2_TETAP: "FASE 2",
+                ParkingPhase.FASE3_LOOP: "FASE 3",
+                ParkingPhase.FASE4_TAP: "FASE 4",
+            }
+            phase_name = phase_names.get(self.parking_session.phase, "FASE ?")
+            cv2.putText(frame, phase_name, (fase_margin + 8, fase_y_bottom + 22),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 255), 1)
+
+            # Progress bar (kanan - horizontal)
+            progress = self.parking_session.get_progress()
+            total_frames = 14  # 3+5+3+3
+            progress_width = 100
+            progress_x = fase_margin + 75
+            progress_y = fase_y_bottom + 18
+
+            # Progress background
+            cv2.rectangle(frame, (progress_x, progress_y - 5),
+                         (progress_x + progress_width, progress_y + 5),
+                         (60, 60, 60), -1)
+
+            # Progress filled
+            filled_width = int(progress_width * (int(progress.split('/')[0]) / total_frames))
+            cv2.rectangle(frame, (progress_x, progress_y - 5),
+                         (progress_x + filled_width, progress_y + 5),
+                         (0, 255, 0), -1)
+
+            # Progress text (di sebelah kanan progress bar)
+            cv2.putText(frame, progress, (progress_x + progress_width + 5, progress_y + 4),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255, 255, 255), 1)
+
+        # LEGEND - Pojok Kiri Bawah (1 baris)
         legend_margin = 10
-        legend_box_width = 160
-        legend_box_height = 85
+        legend_box_width = 220
+        legend_box_height = 32
         frame_height, frame_width = frame.shape[:2]
         legend_y_bottom = frame_height - legend_margin - legend_box_height
 
@@ -1303,34 +1285,45 @@ class RealTimeDistanceDetector:
                      (legend_margin + legend_box_width, legend_y_bottom + legend_box_height),
                      (255, 255, 255), 1)
 
-        # Title
-        cv2.putText(frame, "Legend:", (legend_margin + 8, legend_y_bottom + 18),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-
         # Merah - Mendekat
-        cv2.circle(frame, (legend_margin + 15, legend_y_bottom + 38), 7, (0, 0, 255), -1)
-        cv2.putText(frame, "Mendekat", (legend_margin + 30, legend_y_bottom + 42),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+        cv2.circle(frame, (legend_margin + 12, legend_y_bottom + 16), 5, (0, 0, 255), -1)
+        cv2.putText(frame, "Mendekat", (legend_margin + 22, legend_y_bottom + 20),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.25, (255, 255, 255), 1)
 
         # Hijau - Tetap
-        cv2.circle(frame, (legend_margin + 15, legend_y_bottom + 58), 7, (0, 255, 0), -1)
-        cv2.putText(frame, "Tetap", (legend_margin + 30, legend_y_bottom + 62),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+        cv2.circle(frame, (legend_margin + 80, legend_y_bottom + 16), 5, (0, 255, 0), -1)
+        cv2.putText(frame, "Tetap", (legend_margin + 90, legend_y_bottom + 20),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.25, (255, 255, 255), 1)
 
         # Biru - Menjauh
-        cv2.circle(frame, (legend_margin + 85, legend_y_bottom + 38), 7, (255, 0, 0), -1)
-        cv2.putText(frame, "Menjauh", (legend_margin + 100, legend_y_bottom + 42),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+        cv2.circle(frame, (legend_margin + 135, legend_y_bottom + 16), 5, (255, 0, 0), -1)
+        cv2.putText(frame, "Menjauh", (legend_margin + 145, legend_y_bottom + 20),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.25, (255, 255, 255), 1)
+
+        # Time - Pojok Kanan Atas (di luar box hitam)
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        time_text = f"{timestamp}"
+        (time_w, time_h), _ = cv2.getTextSize(time_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+        time_x = frame_width - time_w - 10
+        cv2.putText(
+            frame,
+            time_text,
+            (time_x, 22),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (255, 255, 255),
+            1
+        )
 
         # BUTTONS - Pojok Kanan Bawah (Loop Detector & Tap Card)
         # Ukuran kecil
-        button_margin = 10
-        button_w, button_h = 130, 28
-        button_spacing = 5
-        
+        button_margin = 8
+        button_w, button_h = 90, 22
+        button_spacing = 4
+
         # Get frame size
         frame_height, frame_width = frame.shape[:2]
-        
+
         # Position: pojok kanan bawah
         button_y = frame_height - button_margin - button_h
         button1_x = frame_width - button_w - button_margin - button_w - button_spacing  # Loop Detector
@@ -1341,30 +1334,30 @@ class RealTimeDistanceDetector:
         loop_color = (0, 255, 0) if loop_active else (50, 50, 50)
         loop_text_color = (255, 255, 255) if loop_active else (120, 120, 120)
 
-        cv2.rectangle(frame, (button1_x, button_y), 
-                     (button1_x + button_w, button_y + button_h), 
+        cv2.rectangle(frame, (button1_x, button_y),
+                     (button1_x + button_w, button_y + button_h),
                      loop_color, -1)
         cv2.rectangle(frame, (button1_x, button_y),
                      (button1_x + button_w, button_y + button_h),
                      (255, 255, 255), 1 if loop_active else 0)
-        cv2.putText(frame, "L - LOOP", 
-                   (button1_x + 8, button_y + 19),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.45, loop_text_color, 1)
+        cv2.putText(frame, "L - LOOP",
+                   (button1_x + 6, button_y + 15),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.3, loop_text_color, 1)
 
         # Tap Card Button
         tap_active = self.parking_session.is_button_active("tap_card")
         tap_color = (0, 255, 0) if tap_active else (50, 50, 50)
         tap_text_color = (255, 255, 255) if tap_active else (120, 120, 120)
 
-        cv2.rectangle(frame, (button2_x, button_y), 
-                     (button2_x + button_w, button_y + button_h), 
+        cv2.rectangle(frame, (button2_x, button_y),
+                     (button2_x + button_w, button_y + button_h),
                      tap_color, -1)
         cv2.rectangle(frame, (button2_x, button_y),
                      (button2_x + button_w, button_y + button_h),
                      (255, 255, 255), 1 if tap_active else 0)
-        cv2.putText(frame, "T - TAP", 
-                   (button2_x + 12, button_y + 19),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.45, tap_text_color, 1)
+        cv2.putText(frame, "T - TAP",
+                   (button2_x + 8, button_y + 15),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.3, tap_text_color, 1)
     
     def run(self):
         """Run real-time detection."""

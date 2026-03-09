@@ -1,12 +1,13 @@
 """
-Real-time Object Distance Detection with YOLO - Single Object Tracking
-Deteksi object mendekat/menjauh dari kamera secara real-time
+Real-time Object Distance Detection with YOLO - Parking System 4-Phase Capture
+Deteksi object mendekat/menjauh dari kamera secara real-time dengan sistem parkir
 
 LOGIKA BARU:
 - Fokus track 1 object terbesar (paling dekat)
 - Beri ID unik (PERSON_1, PERSON_2, dst)
 - SIAGA harus hilang dulu sebelum track object baru
 - Tampilkan ID di label
+- 4 FASE CAPTURE: SIAGA → TETAP → LOOP DETECTOR → TAP CARD
 """
 
 import cv2
@@ -14,6 +15,245 @@ import numpy as np
 from ultralytics import YOLO
 import time
 from datetime import datetime
+from enum import Enum
+import os
+
+
+class ParkingPhase(Enum):
+    """Enum untuk fase-fase dalam parking session."""
+    NO_VEHICLE = 0       # Tidak ada kendaraan
+    FASE1_SIAGA = 1      # SIAGA aktif, capture 3 frame
+    FASE2_TETAP = 2      # Kendaraan berhenti, capture 5 frame
+    FASE3_LOOP = 3       # Menunggu tombol loop detector
+    FASE4_TAP = 4        # Menunggu tombol tap card
+    PREVIEW_READY = 5    # Semua fase selesai, tampilkan preview
+
+
+class ParkingSession:
+    """Manager untuk parking session dengan 4 fase capture."""
+
+    def __init__(self):
+        self.phase = ParkingPhase.NO_VEHICLE
+        self.session_id = None
+        self.session_start_time = None
+        self.vehicle_id = None
+        self.vehicle_class = None
+        self.capture_base_path = "captures"
+
+        # Capture counters
+        self.fase1_count = 0
+        self.fase2_count = 0
+        self.fase3_count = 0
+        self.fase4_count = 0
+
+        # Target counts
+        self.fase1_target = 3
+        self.fase2_target = 5
+        self.fase3_target = 3
+        self.fase4_target = 3
+
+        # Frame buffers
+        self.fase1_frames = []
+        self.fase2_frames = []
+        self.fase3_frames = []
+        self.fase4_frames = []
+
+        # Session state
+        self.is_active = False
+        self.last_vehicle_id = None  # ID kendaraan terakhir (disimpan setelah selesai)
+
+    def start_session(self, vehicle_id, vehicle_class="UNKNOWN"):
+        """Start parking session baru saat SIAGA aktif."""
+        self.session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.session_start_time = datetime.now()
+        self.vehicle_id = vehicle_id
+        self.vehicle_class = vehicle_class
+        self.phase = ParkingPhase.FASE1_SIAGA
+        self.is_active = True
+        self.fase1_count = 0
+        self.fase2_count = 0
+        self.fase3_count = 0
+        self.fase4_count = 0
+        self.fase1_frames = []
+        self.fase2_frames = []
+        self.fase3_frames = []
+        self.fase4_frames = []
+
+        # Create folder structure
+        base_path = os.path.join(self.capture_base_path, self.session_id)
+        for fase in ["fase1", "fase2", "fase3", "fase4"]:
+            os.makedirs(os.path.join(base_path, fase), exist_ok=True)
+
+        print(f"\n[🅿️ PARKING SESSION] Started - {self.session_id}")
+        print(f"   Vehicle: {vehicle_id} ({vehicle_class})")
+
+    def add_frame(self, frame, phase):
+        """Simpan frame ke fase yang sesuai."""
+        if phase == ParkingPhase.FASE1_SIAGA and self.fase1_count < self.fase1_target:
+            self.fase1_frames.append(frame.copy())
+            self.fase1_count += 1
+            return True
+        elif phase == ParkingPhase.FASE2_TETAP and self.fase2_count < self.fase2_target:
+            self.fase2_frames.append(frame.copy())
+            self.fase2_count += 1
+            return True
+        elif phase == ParkingPhase.FASE3_LOOP and self.fase3_count < self.fase3_target:
+            self.fase3_frames.append(frame.copy())
+            self.fase3_count += 1
+            return True
+        elif phase == ParkingPhase.FASE4_TAP and self.fase4_count < self.fase4_target:
+            self.fase4_frames.append(frame.copy())
+            self.fase4_count += 1
+            return True
+        return False
+
+    def save_frames(self):
+        """Simpan semua frame ke disk."""
+        if not self.session_id:
+            return []
+
+        base_path = os.path.join(self.capture_base_path, self.session_id)
+        saved_files = []
+
+        # Save fase 1
+        for i, frame in enumerate(self.fase1_frames):
+            filepath = os.path.join(base_path, "fase1", f"frame_{i+1:03d}.jpg")
+            cv2.imwrite(filepath, frame)
+            saved_files.append(filepath)
+
+        # Save fase 2
+        for i, frame in enumerate(self.fase2_frames):
+            filepath = os.path.join(base_path, "fase2", f"frame_{i+1:03d}.jpg")
+            cv2.imwrite(filepath, frame)
+            saved_files.append(filepath)
+
+        # Save fase 3
+        for i, frame in enumerate(self.fase3_frames):
+            filepath = os.path.join(base_path, "fase3", f"frame_{i+1:03d}.jpg")
+            cv2.imwrite(filepath, frame)
+            saved_files.append(filepath)
+
+        # Save fase 4
+        for i, frame in enumerate(self.fase4_frames):
+            filepath = os.path.join(base_path, "fase4", f"frame_{i+1:03d}.jpg")
+            cv2.imwrite(filepath, frame)
+            saved_files.append(filepath)
+
+        # Save metadata
+        metadata = {
+            "session_id": self.session_id,
+            "vehicle_id": self.vehicle_id,
+            "vehicle_class": self.vehicle_class,
+            "start_time": self.session_start_time.isoformat() if self.session_start_time else None,
+            "fase1_count": self.fase1_count,
+            "fase2_count": self.fase2_count,
+            "fase3_count": self.fase3_count,
+            "fase4_count": self.fase4_count
+        }
+
+        import json
+        metadata_path = os.path.join(base_path, "metadata.json")
+        with open(metadata_path, 'w') as f:
+            json.dump(metadata, f, indent=2)
+        saved_files.append(metadata_path)
+
+        print(f"\n[💾 CAPTURE SAVED] {len(saved_files)} files saved to {base_path}")
+        return saved_files
+
+    def advance_phase(self):
+        """Advance ke fase berikutnya."""
+        if self.phase == ParkingPhase.FASE1_SIAGA and self.fase1_count >= self.fase1_target:
+            self.phase = ParkingPhase.FASE2_TETAP
+            print(f"\n[📍 FASE 2] Kendaraan BERHENTI - Capture 5 frame")
+            return True
+        elif self.phase == ParkingPhase.FASE2_TETAP and self.fase2_count >= self.fase2_target:
+            self.phase = ParkingPhase.FASE3_LOOP
+            print(f"\n[📍 FASE 3] Siap LOOP DETECTOR")
+            return True
+        elif self.phase == ParkingPhase.FASE3_LOOP and self.fase3_count >= self.fase3_target:
+            self.phase = ParkingPhase.FASE4_TAP
+            print(f"\n[📍 FASE 4] Siap TAP CARD")
+            return True
+        elif self.phase == ParkingPhase.FASE4_TAP and self.fase4_count >= self.fase4_target:
+            self.phase = ParkingPhase.PREVIEW_READY
+            print(f"\n[✅ PREVIEW READY] Semua fase selesai!")
+            return True
+        return False
+
+    def complete_session(self):
+        """Complete session dan simpan last vehicle ID."""
+        self.last_vehicle_id = self.vehicle_id
+        self.save_frames()
+        self.is_active = False
+        self.phase = ParkingPhase.NO_VEHICLE
+        print(f"\n[✓ SESSION COMPLETE] Last vehicle: {self.last_vehicle_id}")
+
+    def cancel_session(self):
+        """Cancel session (kendaraan pergi sebelum selesai)."""
+        self.is_active = False
+        self.phase = ParkingPhase.NO_VEHICLE
+        self.vehicle_id = None
+        self.fase1_frames = []
+        self.fase2_frames = []
+        self.fase3_frames = []
+        self.fase4_frames = []
+        print(f"\n[✗ SESSION CANCELLED]")
+
+    def get_progress(self):
+        """Get progress string untuk UI."""
+        total = self.fase1_target + self.fase2_target + self.fase3_target + self.fase4_target
+        current = self.fase1_count + self.fase2_count + self.fase3_count + self.fase4_count
+        return f"{current}/{total}"
+
+    def is_button_active(self, button):
+        """Check apakah tombol aktif."""
+        if button == "loop_detector":
+            return self.phase == ParkingPhase.FASE3_LOOP
+        elif button == "tap_card":
+            return self.phase == ParkingPhase.FASE4_TAP
+        return False
+
+
+class CaptureManager:
+    """Manager untuk capture frames dari parking session."""
+
+    def __init__(self, parking_session):
+        self.session = parking_session
+        self.capture_interval = 0.1  # 100ms antar capture
+        self.last_capture_time = 0
+
+    def can_capture(self, phase):
+        """Check apakah bisa capture di fase ini."""
+        if not self.session.is_active:
+            return False
+
+        current_time = time.time()
+        if current_time - self.last_capture_time < self.capture_interval:
+            return False
+
+        if phase == ParkingPhase.FASE1_SIAGA and self.session.fase1_count < self.session.fase1_target:
+            return True
+        elif phase == ParkingPhase.FASE2_TETAP and self.session.fase2_count < self.session.fase2_target:
+            return True
+        elif phase == ParkingPhase.FASE3_LOOP and self.session.fase3_count < self.session.fase3_target:
+            return True
+        elif phase == ParkingPhase.FASE4_TAP and self.session.fase4_count < self.session.fase4_target:
+            return True
+
+        return False
+
+    def capture(self, frame, phase):
+        """Capture frame dan simpan ke session."""
+        if not self.can_capture(phase):
+            return False
+
+        self.session.add_frame(frame, phase)
+        self.last_capture_time = time.time()
+
+        # Check apakah perlu advance phase
+        self.session.advance_phase()
+
+        return True
 
 
 class ObjectDistanceTracker:
@@ -23,6 +263,7 @@ class ObjectDistanceTracker:
     - Hanya track 1 object terbesar (paling dekat)
     - Beri ID unik yang konsisten
     - SIAGA harus hilang dulu sebelum track object baru
+    - Support parking session dengan 4 fase capture
     """
 
     def __init__(self, max_history=30, siaga_frame_threshold=3, siaga_hold_time=3.0, target_classes=None):
@@ -36,37 +277,41 @@ class ObjectDistanceTracker:
         self.tracked_object_history = []
         self.tracked_object_bbox = None
         self.tracked_object_area = 0  # Area object yang di-track
+        self.tracked_object_class = None  # Class name object yang di-track
 
         # Camera view info untuk focus percentage
         self.camera_view_area = 0  # Total area camera view
-        
+
         # SIAGA tracking
         self.siaga_active = False
         self.approaching_consecutive_count = 0
         self.siaga_trigger_time = None
         self.siaga_expire_time = None
         self.siaga_clear_time = None
-        
+
         # MOVING AWAY DETECTION - untuk handle SIAGA hilang karena menjauh
         self.moving_away_detected = {}  # Track moving_away per detik: {second_count: has_detection}
         self.moving_away_start_time = None  # Waktu mulai hitung 5 detik
         self.moving_away_seconds_count = 0  # Jumlah detik yang valid (max 5)
         self.last_moving_away_second = -1  # Detik terakhir terdeteksi moving_away
-        
+
         # SIAGA PERSISTENCE - untuk handle object sangat dekat
         self.last_siaga_area = 0  # Area terakhir saat SIAGA aktif
         self.siaga_persistence_active = False  # Mode persistence
         self.siaga_persistence_start_time = None  # Waktu mulai persistence
         self.siaga_persistence_delay = 0.02  # 20ms delay sebelum clear SIAGA
-        
+
         # PERSISTENCE TIME - untuk handle object masih terdeteksi setelah SIAGA hilang
         self.siaga_cleared_time = None  # Waktu SIAGA cleared
         self.persistence_time_duration = 1.5  # 1.5 detik persistence time
         self.persistence_time_active = False  # Mode persistence time
         self.persistence_time_object_bbox = None  # Last bbox object saat persistence time
-        
+
         # Object counter untuk ID
         self.object_counter = 0
+
+        # PARKING SESSION - untuk tracking session terakhir
+        self.last_session_vehicle_id = None  # ID kendaraan dari session terakhir
         
     def update(self, detections):
         """Update tracker dengan deteksi baru."""
@@ -138,6 +383,7 @@ class ObjectDistanceTracker:
         # Update tracked object info
         self.tracked_object_bbox = largest_detection['bbox']
         self.tracked_object_area = current_area  # Simpan area untuk persistence check
+        self.tracked_object_class = largest_detection.get('class_name', 'UNKNOWN')  # Simpan class name
         
         # Simpan ke history
         self.tracked_object_history.append({
@@ -327,20 +573,32 @@ class ObjectDistanceTracker:
         if self.siaga_active:
             self.siaga_expire_time = None
     
-    def reset_tracking(self):
-        """Reset semua tracking dan SIAGA (untuk tombol reset)."""
+    def reset_tracking(self, save_last_id=False):
+        """Reset semua tracking dan SIAGA (untuk tombol reset).
+        
+        Args:
+            save_last_id: Jika True, simpan tracked_object_id sebagai last_session_vehicle_id
+        """
         was_siaga = self.siaga_active
+        
+        # Simpan last vehicle ID jika diminta
+        if save_last_id and self.tracked_object_id:
+            self.last_session_vehicle_id = self.tracked_object_id
+            print(f"\n[💾 SAVED] Last vehicle ID: {self.last_session_vehicle_id}")
+        
         self.siaga_active = False
         self.approaching_consecutive_count = 0
         self.tracked_object_id = None
         self.tracked_object_bbox = None
         self.tracked_object_area = 0
         self.tracked_object_history = []
+        self.tracked_object_class = None
         self.siaga_expire_time = None
         self.siaga_clear_time = time.time()
         self.last_siaga_area = 0
         self.siaga_persistence_active = False
-        
+        self.persistence_time_active = False
+
         if was_siaga:
             print(f"\n[🔄 RESET] Tracking dan SIAGA direset manual!")
         else:
@@ -397,6 +655,7 @@ class RealTimeDistanceDetector:
         # Target classes untuk tracking:
         # 0=person, 67=cell phone, 1=bicycle, 2=car, 3=motorcycle, 5=bus, 7=truck
         self.target_classes = [0, 67, 1, 2, 3, 5, 7]
+        # self.target_classes = [67]
 
         # Initialize tracker dengan target classes
         self.tracker = ObjectDistanceTracker(
@@ -408,10 +667,18 @@ class RealTimeDistanceDetector:
 
         # Class names dari YOLO
         self.class_names = self.model.names
-        
+
+        # Parking Session & Capture Manager
+        self.parking_session = ParkingSession()
+        self.capture_manager = CaptureManager(self.parking_session)
+
+        # UI state
+        self.show_preview = False
+        self.preview_frames = None
+
         # Video capture
         self.cap = None
-        
+
         # Stats
         self.fps = 0
         self.frame_count = 0
@@ -466,6 +733,189 @@ class RealTimeDistanceDetector:
                     })
         
         return detections
+
+    def handle_parking_session(self, result, frame):
+        """Handle parking session state machine."""
+        tracked_object = result.get('tracked_object') if result else None
+        status = result.get('status', 'stable') if result else 'no_detection'
+        current_time = time.time()
+
+        # Check jika preview sudah ready
+        if self.parking_session.phase == ParkingPhase.PREVIEW_READY:
+            self.show_preview = True
+            self.preview_frames = {
+                'fase1': self.parking_session.fase1_frames,
+                'fase2': self.parking_session.fase2_frames,
+                'fase3': self.parking_session.fase3_frames,
+                'fase4': self.parking_session.fase4_frames,
+            }
+            return
+
+        # Check jika tidak ada tracked object
+        if not tracked_object:
+            if self.parking_session.is_active:
+                # Kendaraan pergi sebelum sesi selesai → CANCEL
+                self.parking_session.cancel_session()
+            return
+
+        # Check SIAGA aktif → Start FASE1
+        if self.tracker.siaga_active and not self.parking_session.is_active:
+            self.parking_session.start_session(
+                self.tracker.tracked_object_id,
+                self.tracker.tracked_object_class
+            )
+
+        # Jika session aktif, handle capture
+        if self.parking_session.is_active:
+            phase = self.parking_session.phase
+
+            # FASE1: SIAGA aktif (approaching)
+            if phase == ParkingPhase.FASE1_SIAGA:
+                if status == 'approaching' and self.capture_manager.can_capture(phase):
+                    self.capture_manager.capture(frame, phase)
+                    print(f"\n[📸 FASE 1] Capture {self.parking_session.fase1_count}/{self.parking_session.fase1_target}")
+
+            # FASE2: Status TETAP (stable)
+            elif phase == ParkingPhase.FASE2_TETAP:
+                if status == 'stable' and self.capture_manager.can_capture(phase):
+                    self.capture_manager.capture(frame, phase)
+                    print(f"\n[📸 FASE 2] Capture {self.parking_session.fase2_count}/{self.parking_session.fase2_target}")
+
+            # FASE3 & FASE4: Menunggu tombol manual
+            elif phase == ParkingPhase.FASE3_LOOP or phase == ParkingPhase.FASE4_TAP:
+                pass  # Menunggu tombol ditekan
+
+    def trigger_loop_detector(self):
+        """Trigger capture untuk FASE3 (Loop Detector)."""
+        if self.parking_session.phase == ParkingPhase.FASE3_LOOP:
+            print(f"\n[🔘 LOOP DETECTOR] Triggered!")
+            # Capture 3 frame dengan interval
+            for i in range(self.parking_session.fase3_target):
+                ret, frame = self.cap.read()
+                if ret:
+                    self.parking_session.add_frame(frame, ParkingPhase.FASE3_LOOP)
+                    time.sleep(0.1)
+            self.parking_session.advance_phase()
+
+    def trigger_tap_card(self):
+        """Trigger capture untuk FASE4 (Tap Card)."""
+        if self.parking_session.phase == ParkingPhase.FASE4_TAP:
+            print(f"\n[🔘 TAP CARD] Triggered!")
+            # Capture 3 frame dengan interval
+            for i in range(self.parking_session.fase4_target):
+                ret, frame = self.cap.read()
+                if ret:
+                    self.parking_session.add_frame(frame, ParkingPhase.FASE4_TAP)
+                    time.sleep(0.1)
+            self.parking_session.advance_phase()
+
+    def complete_parking_session(self):
+        """Complete parking session dan reset."""
+        self.parking_session.complete_session()
+        
+        # Reset tracking dengan save last vehicle ID
+        self.tracker.reset_tracking(save_last_id=True)
+        
+        # Reset UI
+        self.show_preview = False
+        self.preview_frames = None
+
+    def show_capture_preview(self):
+        """Tampilkan window preview untuk semua capture."""
+        if not self.preview_frames:
+            return
+
+        # Create preview window
+        preview_title = f"📸 Capture Preview - {self.parking_session.session_id}"
+        
+        # Calculate grid layout
+        fase_names = ["FASE 1: SIAGA", "FASE 2: TETAP", "FASE 3: LOOP", "FASE 4: TAP"]
+        fase_data = [
+            self.preview_frames['fase1'],
+            self.preview_frames['fase2'],
+            self.preview_frames['fase3'],
+            self.preview_frames['fase4'],
+        ]
+        fase_counts = [3, 5, 3, 3]
+
+        # Create a large canvas for preview
+        canvas_height = 800
+        canvas_width = 1200
+        canvas = np.zeros((canvas_height, canvas_width, 3), dtype=np.uint8)
+        canvas[:] = (40, 40, 40)  # Dark gray background
+
+        # Title
+        cv2.putText(canvas, preview_title, (20, 35), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
+
+        y_offset = 60
+        thumb_width = 100
+        thumb_height = 75
+        spacing = 15
+
+        for fase_idx, (fase_name, frames, target_count) in enumerate(zip(fase_names, fase_data, fase_counts)):
+            # Fase title
+            cv2.putText(canvas, fase_name, (20, y_offset + 20),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 1)
+
+            # Draw thumbnails
+            x_offset = 20
+            y_offset += 30
+
+            for i in range(target_count):
+                if i < len(frames):
+                    # Resize frame to thumbnail
+                    thumb = cv2.resize(frames[i], (thumb_width, thumb_height))
+                    
+                    # Draw thumbnail border
+                    border_color = (0, 255, 0) if i < len(frames) else (100, 100, 100)
+                    cv2.rectangle(canvas, 
+                                 (x_offset, y_offset), 
+                                 (x_offset + thumb_width, y_offset + thumb_height),
+                                 border_color, 2)
+                    
+                    # Place thumbnail
+                    canvas[y_offset:y_offset + thumb_height, 
+                           x_offset:x_offset + thumb_width] = thumb
+                else:
+                    # Empty placeholder
+                    cv2.rectangle(canvas,
+                                 (x_offset, y_offset),
+                                 (x_offset + thumb_width, y_offset + thumb_height),
+                                 (80, 80, 80), -1)
+                    cv2.rectangle(canvas,
+                                 (x_offset, y_offset),
+                                 (x_offset + thumb_width, y_offset + thumb_height),
+                                 (100, 100, 100), 1)
+
+                x_offset += thumb_width + spacing
+
+            y_offset += thumb_height + 30
+
+        # Draw SELESAI button
+        button_w, button_h = 200, 50
+        button_x = (canvas_width - button_w) // 2
+        button_y = canvas_height - button_h - 30
+        
+        cv2.rectangle(canvas, (button_x, button_y), 
+                     (button_x + button_w, button_y + button_h),
+                     (0, 255, 0), -1)
+        cv2.rectangle(canvas, (button_x, button_y),
+                     (button_x + button_w, button_y + button_h),
+                     (255, 255, 255), 2)
+        cv2.putText(canvas, "SELESAI", (button_x + 45, button_y + 32),
+                   cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
+
+        # Show canvas
+        cv2.imshow(preview_title, canvas)
+
+        # Handle button click (simple: check if user presses Enter or clicks)
+        key = cv2.waitKey(1) & 0xFF
+        if key == 13:  # Enter key
+            self.complete_parking_session()
+            return True
+
+        return False
     
     def draw_detections(self, frame, result):
         """Draw detection pada frame dengan ID dan status."""
@@ -666,7 +1116,87 @@ class RealTimeDistanceDetector:
             (255, 255, 255),
             1
         )
-        
+
+        # PARKING SESSION PANEL
+        if self.parking_session.is_active:
+            session_y = legend_y + 20
+            panel_width = 430
+            panel_height = 85
+
+            # Background panel
+            cv2.rectangle(frame, (10, session_y), (10 + panel_width, session_y + panel_height),
+                         (30, 30, 30), -1)
+            cv2.rectangle(frame, (10, session_y), (10 + panel_width, session_y + panel_height),
+                         (0, 255, 255), 2)
+
+            # Session title
+            cv2.putText(frame, f"🅿️ PARKING SESSION", (20, session_y + 20),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+
+            # Vehicle info
+            vehicle_info = f"Vehicle: {self.parking_session.vehicle_id}"
+            cv2.putText(frame, vehicle_info, (20, session_y + 42),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1)
+
+            # Phase info
+            phase_names = {
+                ParkingPhase.FASE1_SIAGA: "FASE 1: SIAGA (Mendekat)",
+                ParkingPhase.FASE2_TETAP: "FASE 2: TETAP (Berhenti)",
+                ParkingPhase.FASE3_LOOP: "FASE 3: Siap LOOP DETECTOR",
+                ParkingPhase.FASE4_TAP: "FASE 4: Siap TAP CARD",
+            }
+            phase_name = phase_names.get(self.parking_session.phase, "UNKNOWN")
+            cv2.putText(frame, phase_name, (20, session_y + 62),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1)
+
+            # Progress bar
+            progress = self.parking_session.get_progress()
+            total_frames = 14  # 3+5+3+3
+            progress_width = 150
+            progress_x = 280
+            progress_y = session_y + 45
+
+            # Progress background
+            cv2.rectangle(frame, (progress_x, progress_y - 10),
+                         (progress_x + progress_width, progress_y + 10),
+                         (60, 60, 60), -1)
+
+            # Progress filled
+            filled_width = int(progress_width * (int(progress.split('/')[0]) / total_frames))
+            cv2.rectangle(frame, (progress_x, progress_y - 10),
+                         (progress_x + filled_width, progress_y + 10),
+                         (0, 255, 0), -1)
+
+            # Progress text
+            cv2.putText(frame, progress, (progress_x + 50, progress_y + 5),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+
+        # BUTTONS (Loop Detector & Tap Card)
+        button_y = legend_y + 95
+        button_w, button_h = 180, 35
+
+        # Loop Detector Button
+        loop_active = self.parking_session.is_button_active("loop_detector")
+        loop_color = (0, 255, 0) if loop_active else (60, 60, 60)
+        loop_text_color = (255, 255, 255) if loop_active else (150, 150, 150)
+
+        cv2.rectangle(frame, (10, button_y), (10 + button_w, button_y + button_h), loop_color, -1)
+        cv2.rectangle(frame, (10, button_y), (10 + button_w, button_y + button_h),
+                     (255, 255, 255), 1 if loop_active else 0)
+        cv2.putText(frame, "L - LOOP DETECTOR", (15, button_y + 23),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.55, loop_text_color, 1)
+
+        # Tap Card Button
+        tap_active = self.parking_session.is_button_active("tap_card")
+        tap_color = (0, 255, 0) if tap_active else (60, 60, 60)
+        tap_text_color = (255, 255, 255) if tap_active else (150, 150, 150)
+
+        cv2.rectangle(frame, (200, button_y), (200 + button_w, button_y + button_h), tap_color, -1)
+        cv2.rectangle(frame, (200, button_y), (200 + button_w, button_y + button_h),
+                     (255, 255, 255), 1 if tap_active else 0)
+        cv2.putText(frame, "T - TAP CARD", (205, button_y + 23),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.55, tap_text_color, 1)
+
         # FOCUS PERCENTAGE DISPLAY (NEW!)
         tracked_id = self.tracker.get_tracked_object_id()
         if tracked_id and result and result.get('tracked_object'):
@@ -817,10 +1347,18 @@ class RealTimeDistanceDetector:
         print("  4. SIAGA hold 3 detik setelah object hilang")
         print("  5. SIAGA CLEARED → Boleh track object baru")
         print("  6. SIAGA hilang otomatis jika object MENJAUH")
+        print("\nParking System:")
+        print("  - FASE 1: Capture 3 frame saat SIAGA aktif (MENDEKAT)")
+        print("  - FASE 2: Capture 5 frame saat kendaraan BERHENTI (TETAP)")
+        print("  - FASE 3: Capture 3 frame saat tombol LOOP DETECTOR ditekan")
+        print("  - FASE 4: Capture 3 frame saat tombol TAP CARD ditekan")
         print("\nControls:")
         print("  - Press 'q' to quit")
         print("  - Press 'r' to RESET tracking dan SIAGA")
         print("  - Press 's' to save snapshot")
+        print("  - Press 'l' to trigger LOOP DETECTOR (FASE 3)")
+        print("  - Press 't' to trigger TAP CARD (FASE 4)")
+        print("  - Press ENTER to SELESAI (saat preview)")
         print("  - Press '+' to increase confidence threshold")
         print("  - Press '-' to decrease confidence threshold")
         print("="*70 + "\n")
@@ -842,14 +1380,22 @@ class RealTimeDistanceDetector:
                 # Check SIAGA expire
                 self.tracker.check_siaga_expire(time.time())
 
-                # Draw detections
-                self.draw_detections(frame, result)
+                # Handle parking session
+                self.handle_parking_session(result, frame)
 
-                # Draw info panel (pass result sebagai parameter)
-                self.draw_info_panel(frame, result)
+                # Check if preview should be shown
+                if self.show_preview and self.preview_frames:
+                    if self.show_capture_preview():
+                        continue  # Preview sudah ditutup
+                else:
+                    # Draw detections (hanya jika tidak show preview)
+                    self.draw_detections(frame, result)
 
-                # Show frame
-                cv2.imshow('Object Distance Detection - Single Object Tracking', frame)
+                    # Draw info panel (pass result sebagai parameter)
+                    self.draw_info_panel(frame, result)
+
+                    # Show frame
+                    cv2.imshow('Object Distance Detection - Parking System', frame)
 
                 # Handle keyboard
                 key = cv2.waitKey(1) & 0xFF
@@ -863,13 +1409,23 @@ class RealTimeDistanceDetector:
                     filename = f"snapshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
                     cv2.imwrite(filename, frame)
                     print(f"\n[OK] Snapshot saved: {filename}")
+                elif key == ord('l'):
+                    # Trigger LOOP DETECTOR
+                    self.trigger_loop_detector()
+                elif key == ord('t'):
+                    # Trigger TAP CARD
+                    self.trigger_tap_card()
+                elif key == 13:  # Enter key
+                    # SELESAI (hanya jika preview aktif)
+                    if self.show_preview:
+                        self.complete_parking_session()
                 elif key == ord('+') or key == ord('='):
                     self.confidence_threshold = min(0.9, self.confidence_threshold + 0.05)
                     print(f"\nConfidence threshold: {self.confidence_threshold:.2f}")
                 elif key == ord('-'):
                     self.confidence_threshold = max(0.1, self.confidence_threshold - 0.05)
                     print(f"\nConfidence threshold: {self.confidence_threshold:.2f}")
-        
+
         finally:
             self.stop()
             print("\n[OK] Application closed")

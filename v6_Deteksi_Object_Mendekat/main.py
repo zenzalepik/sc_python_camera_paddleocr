@@ -1129,72 +1129,6 @@ class RealTimeDistanceDetector:
         # Define legend_y for positioning (removed Legend text)
         legend_y = 75 if not (is_siaga or siaga_cleared) else 75
 
-        # FOCUS PERCENTAGE DISPLAY (NEW!)
-        tracked_id = self.tracker.get_tracked_object_id()
-        if tracked_id and result and result.get('tracked_object'):
-            obj_area = result['tracked_object'].get('area', 0)
-            if self.tracker.camera_view_area > 0:
-                focus_percentage = (obj_area / self.tracker.camera_view_area) * 100
-
-                # Focus bar color based on percentage
-                if focus_percentage < 30:
-                    focus_color = (0, 0, 255)  # Merah - Sangat jauh
-                elif focus_percentage < 50:
-                    focus_color = (0, 140, 255)  # Orange - Jauh
-                elif focus_percentage < 70:
-                    focus_color = (0, 255, 255)  # Kuning - Sedang
-                elif focus_percentage < 90:
-                    focus_color = (0, 255, 0)  # Hijau - Dekat (optimal)
-                else:
-                    focus_color = (255, 0, 0)  # Biru - Sangat dekat
-
-                # Draw FOCUS LOCK indicator with ID
-                cv2.putText(
-                    frame,
-                    f"🎯 FOCUS LOCK: {tracked_id}",
-                    (10, legend_y + 14),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.35,
-                    focus_color,
-                    1
-                )
-
-                # Draw focus percentage
-                cv2.putText(
-                    frame,
-                    f"   {focus_percentage:.1f}%",
-                    (10, legend_y + 30),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.3,
-                    focus_color,
-                    1
-                )
-
-                # Draw focus bar (10 segments)
-                bar_x = 160
-                bar_y = legend_y + 20
-                segment_width = 20
-                total_segments = 10
-                filled_segments = int(focus_percentage / 10)
-
-                for i in range(total_segments):
-                    if i < filled_segments:
-                        cv2.rectangle(
-                            frame,
-                            (bar_x + i * segment_width, bar_y),
-                            (bar_x + (i + 1) * segment_width - 2, bar_y + 8),
-                            focus_color,
-                            -1
-                        )
-                    else:
-                        cv2.rectangle(
-                            frame,
-                            (bar_x + i * segment_width, bar_y),
-                            (bar_x + (i + 1) * segment_width - 2, bar_y + 8),
-                            (100, 100, 100),
-                            -1
-                        )
-
         # Tambahkan debug info - status saat ini
         tracked_id = self.tracker.get_tracked_object_id()
         if tracked_id:
@@ -1213,7 +1147,7 @@ class RealTimeDistanceDetector:
             cv2.putText(
                 frame,
                 debug_status,
-                (10, legend_y + 55),
+                (10, legend_y + 40),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.3,
                 (200, 200, 200),
@@ -1221,11 +1155,13 @@ class RealTimeDistanceDetector:
             )
 
         # FASE & PROGRESS BAR - Di atas Legend (Pojok Kiri Bawah, Horizontal)
+        # Define variables first for focus box positioning
+        fase_margin = 10
+        fase_box_width = 220
+        fase_box_height = 35
+        legend_box_height = 32
+        
         if self.parking_session.is_active:
-            fase_margin = 10
-            fase_box_width = 220
-            fase_box_height = 35
-            legend_box_height = 32  # Same as legend box
             frame_height, frame_width = frame.shape[:2]
             fase_y_bottom = frame_height - fase_margin - legend_box_height - 5 - fase_box_height
 
@@ -1269,6 +1205,51 @@ class RealTimeDistanceDetector:
             # Progress text (di sebelah kanan progress bar)
             cv2.putText(frame, progress, (progress_x + progress_width + 5, progress_y + 4),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255, 255, 255), 1)
+
+        # FOCUS PERCENTAGE DISPLAY - Di atas kotak Fase (Pojok Kiri Bawah)
+        tracked_id = self.tracker.get_tracked_object_id()
+        if tracked_id and result and result.get('tracked_object'):
+            obj_area = result['tracked_object'].get('area', 0)
+            if self.tracker.camera_view_area > 0:
+                focus_percentage = (obj_area / self.tracker.camera_view_area) * 100
+
+                # Focus bar color based on percentage
+                if focus_percentage < 30:
+                    focus_color = (0, 0, 255)  # Merah - Sangat jauh
+                elif focus_percentage < 50:
+                    focus_color = (0, 140, 255)  # Orange - Jauh
+                elif focus_percentage < 70:
+                    focus_color = (0, 255, 255)  # Kuning - Sedang
+                elif focus_percentage < 90:
+                    focus_color = (0, 255, 0)  # Hijau - Dekat (optimal)
+                else:
+                    focus_color = (255, 0, 0)  # Biru - Sangat dekat
+
+                # Position: di atas fase box
+                focus_margin = 10
+                focus_box_height = 35
+                frame_height, frame_width = frame.shape[:2]
+                legend_box_height = 32
+                fase_box_height = 35
+                focus_y_bottom = frame_height - focus_margin - legend_box_height - 5 - fase_box_height - 5 - focus_box_height
+
+                # Background box untuk focus
+                cv2.rectangle(frame, (focus_margin, focus_y_bottom),
+                             (focus_margin + fase_box_width, focus_y_bottom + focus_box_height),
+                             (30, 30, 30), -1)
+                cv2.rectangle(frame, (focus_margin, focus_y_bottom),
+                             (focus_margin + fase_box_width, focus_y_bottom + focus_box_height),
+                             focus_color, 1)
+
+                # Focus lock text (kiri)
+                cv2.putText(frame, f"Focus: {tracked_id}", (focus_margin + 8, focus_y_bottom + 22),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, focus_color, 1)
+
+                # Focus percentage (kanan)
+                focus_text = f"{focus_percentage:.1f}%"
+                (focus_w, focus_h), _ = cv2.getTextSize(focus_text, cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1)
+                cv2.putText(frame, focus_text, (focus_margin + fase_box_width - focus_w - 8, focus_y_bottom + 22),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, focus_color, 1)
 
         # LEGEND - Pojok Kiri Bawah (1 baris)
         legend_margin = 10

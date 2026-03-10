@@ -17,8 +17,6 @@ import time
 from datetime import datetime
 from enum import Enum
 import os
-import ctypes
-from ctypes import wintypes
 
 
 class ParkingPhase(Enum):
@@ -706,28 +704,9 @@ class RealTimeDistanceDetector:
         print(f"[OK] Camera opened: {self.camera_id}")
         print(f"[INFO] Camera view area: {frame_width}x{frame_height} = {self.tracker.camera_view_area}px")
         
-        # Create window - mode normal (bisa di-maximize)
+        # Create window dengan ukuran sama dengan frame camera (640x480)
         cv2.namedWindow('Object Distance Detection - Parking System', cv2.WINDOW_NORMAL)
-        
-        # Set window position dan size untuk maximize
-        # Menggunakan work area (tidak termasuk taskbar)
-        try:
-            # Get work area (excluding taskbar)
-            SPI_GETWORKAREA = 48
-            rect = wintypes.RECT()
-            ctypes.windll.user32.SystemParametersInfoW(SPI_GETWORKAREA, 0, ctypes.byref(rect), 0)
-            work_width = rect.right - rect.left
-            work_height = rect.bottom - rect.top
-            work_x = rect.left
-            work_y = rect.top
-            
-            # Set window position dan size
-            cv2.moveWindow('Object Distance Detection - Parking System', work_x, work_y, work_width, work_height)
-            print(f"[INFO] Window maximize: {work_width}x{work_height}")
-        except Exception as e:
-            # Fallback: set window size besar
-            cv2.resizeWindow('Object Distance Detection - Parking System', 1280, 960)
-            print(f"[INFO] Window size: 1280x960 (fallback)")
+        cv2.resizeWindow('Object Distance Detection - Parking System', frame_width, frame_height)
         
         return True
     
@@ -810,29 +789,29 @@ class RealTimeDistanceDetector:
             # FASE3 & FASE4: Menunggu tombol manual
             elif phase == ParkingPhase.FASE3_LOOP or phase == ParkingPhase.FASE4_TAP:
                 pass  # Menunggu tombol ditekan
+        
+        # Auto-advance phase jika capture sudah selesai
+        if self.parking_session.is_active:
+            self.parking_session.advance_phase()
 
-    def trigger_loop_detector(self):
+    def trigger_loop_detector(self, current_frame):
         """Trigger capture untuk FASE3 (Loop Detector)."""
         if self.parking_session.phase == ParkingPhase.FASE3_LOOP:
             print(f"\n[🔘 LOOP DETECTOR] Triggered!")
-            # Capture 3 frame dengan interval
+            # Capture 3 frame dari current frame (dengan sedikit variasi)
             for i in range(self.parking_session.fase3_target):
-                ret, frame = self.cap.read()
-                if ret:
-                    self.parking_session.add_frame(frame, ParkingPhase.FASE3_LOOP)
-                    time.sleep(0.1)
+                self.parking_session.add_frame(current_frame, ParkingPhase.FASE3_LOOP)
+                time.sleep(0.05)  # Small delay untuk variasi
             self.parking_session.advance_phase()
 
-    def trigger_tap_card(self):
+    def trigger_tap_card(self, current_frame):
         """Trigger capture untuk FASE4 (Tap Card)."""
         if self.parking_session.phase == ParkingPhase.FASE4_TAP:
             print(f"\n[🔘 TAP CARD] Triggered!")
-            # Capture 3 frame dengan interval
+            # Capture 3 frame dari current frame
             for i in range(self.parking_session.fase4_target):
-                ret, frame = self.cap.read()
-                if ret:
-                    self.parking_session.add_frame(frame, ParkingPhase.FASE4_TAP)
-                    time.sleep(0.1)
+                self.parking_session.add_frame(current_frame, ParkingPhase.FASE4_TAP)
+                time.sleep(0.05)  # Small delay untuk variasi
             self.parking_session.advance_phase()
 
     def complete_parking_session(self):
@@ -845,6 +824,74 @@ class RealTimeDistanceDetector:
         # Reset UI
         self.show_preview = False
         self.preview_frames = None
+
+    def show_help_popup(self):
+        """Tampilkan popup bantuan."""
+        help_title = "BANTUAN - Parking System Capture"
+        
+        # Create canvas untuk help popup
+        canvas_height = 500
+        canvas_width = 600
+        canvas = np.zeros((canvas_height, canvas_width, 3), dtype=np.uint8)
+        canvas[:] = (40, 40, 40)  # Dark gray background
+        
+        # Help content (line by line)
+        help_lines = [
+            ("CARA MENGGUNAKAN:", 0.5, (0, 255, 255), 25),
+            ("", 0, (0, 0, 0), 0),
+            ("1. Tunggu kendaraan terdeteksi kamera", 0.4, (255, 255, 255), 50),
+            ("2. SIAGA aktif otomatis saat kendaraan mendekat", 0.4, (255, 255, 255), 70),
+            ("3. FASE 1: Capture 3 frame otomatis (MENDEKAT)", 0.4, (255, 255, 255), 90),
+            ("4. FASE 2: Capture 5 frame otomatis (BERHENTI)", 0.4, (255, 255, 255), 110),
+            ("5. FASE 3: Tekan 'L' untuk LOOP DETECTOR (3 frame)", 0.4, (255, 255, 255), 130),
+            ("6. FASE 4: Tekan 'T' untuk TAP CARD (3 frame)", 0.4, (255, 255, 255), 150),
+            ("7. Preview muncul otomatis setelah FASE 4", 0.4, (255, 255, 255), 170),
+            ("8. Tekan ENTER untuk SELESAI", 0.4, (0, 255, 0), 190),
+            ("", 0, (0, 0, 0), 0),
+            ("KEYBOARD SHORTCUTS:", 0.5, (0, 255, 255), 220),
+            ("", 0, (0, 0, 0), 0),
+            ("L - Trigger LOOP DETECTOR (FASE 3 - 3 frame)", 0.4, (255, 255, 255), 250),
+            ("T - Trigger TAP CARD (FASE 4 - 3 frame)", 0.4, (255, 255, 255), 270),
+            ("ENTER - SELESAI (saat preview)", 0.4, (255, 255, 255), 290),
+            ("H - Tampilkan bantuan ini", 0.4, (255, 255, 255), 310),
+            ("Q - Quit aplikasi", 0.4, (255, 255, 255), 330),
+            ("S - Save snapshot", 0.4, (255, 255, 255), 350),
+            ("+/- - Adjust confidence threshold", 0.4, (255, 255, 255), 370),
+        ]
+        
+        y_offset = 0
+        for text, font_size, color, y in help_lines:
+            if y > 0:
+                cv2.putText(canvas, text, (20, y),
+                           cv2.FONT_HERSHEY_SIMPLEX, font_size, color, 1)
+        
+        # Draw border
+        cv2.rectangle(canvas, (0, 0), (canvas_width, canvas_height), (255, 255, 255), 2)
+        
+        # Title (small, inside border)
+        cv2.putText(canvas, help_title, (20, canvas_height - 15),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.4, (200, 200, 200), 1)
+        
+        # Show help window
+        cv2.imshow(help_title, canvas)
+        
+        # Wait for user to close
+        while True:
+            key = cv2.waitKey(1) & 0xFF
+            if key == 13 or key == ord('h'):  # Enter or H
+                break
+            
+            # Check mouse click or window closed
+            if cv2.getWindowProperty(help_title, cv2.WND_PROP_VISIBLE) < 1:
+                break
+        
+        # Close window (ignore error if already closed)
+        try:
+            cv2.destroyWindow(help_title)
+        except:
+            pass
+        
+        return True
 
     def show_capture_preview(self):
         """Tampilkan window preview untuk semua capture."""
@@ -1056,9 +1103,10 @@ class RealTimeDistanceDetector:
 
         # Panel height (tanpa SIAGA di dalam box)
         panel_height = 65
-        cv2.rectangle(frame, (0, 0), (450, panel_height), (0, 0, 0), -1)
-        cv2.rectangle(frame, (0, 0), (450, panel_height), (255, 255, 255), 1)
-        
+        panel_width = 220  # Same as focus box width
+        cv2.rectangle(frame, (0, 0), (panel_width, panel_height), (0, 0, 0), -1)
+        cv2.rectangle(frame, (0, 0), (panel_width, panel_height), (255, 255, 255), 1)
+
         # FPS
         cv2.putText(
             frame,
@@ -1070,6 +1118,31 @@ class RealTimeDistanceDetector:
             1
         )
 
+        # Status - di bawah FPS (di dalam box hitam)
+        tracked_id = self.tracker.get_tracked_object_id()
+        if tracked_id:
+            status = result.get('status', 'N/A') if result else 'N/A'
+            persistence_status = " [PERSISTENCE]" if self.tracker.siaga_persistence_active else ""
+
+            # Tambahkan persistence time status
+            persistence_time_status = ""
+            if self.tracker.persistence_time_active:
+                persistence_elapsed = time.time() - (self.tracker.siaga_cleared_time or time.time())
+                persistence_remaining = self.tracker.persistence_time_duration - persistence_elapsed
+                if persistence_remaining > 0:
+                    persistence_time_status = f" [PERSISTENCE: {persistence_remaining:.1f}s]"
+
+            debug_status = f"Status: {status}{persistence_status}{persistence_time_status}"
+            cv2.putText(
+                frame,
+                debug_status,
+                (10, 38),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.3,
+                (200, 200, 200),
+                1
+            )
+
         # SIAGA ALERT - Di atas tengah (di luar box hitam)
         if is_siaga:
             blink_color = (0, 0, 255) if int(time.time() * 4) % 2 == 0 else (0, 140, 255)
@@ -1077,7 +1150,7 @@ class RealTimeDistanceDetector:
 
             # Get frame width for centering
             frame_height, frame_width = frame.shape[:2]
-            siaga_text = "⚠️ SIAGA: Object MENDEKAT!"
+            siaga_text = "SIAGA: Object MENDEKAT!"
             (siaga_w, siaga_h), _ = cv2.getTextSize(siaga_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
             siaga_x = (frame_width - siaga_w) // 2
 
@@ -1128,31 +1201,6 @@ class RealTimeDistanceDetector:
 
         # Define legend_y for positioning (removed Legend text)
         legend_y = 75 if not (is_siaga or siaga_cleared) else 75
-
-        # Tambahkan debug info - status saat ini
-        tracked_id = self.tracker.get_tracked_object_id()
-        if tracked_id:
-            status = result.get('status', 'N/A') if result else 'N/A'
-            persistence_status = " [PERSISTENCE]" if self.tracker.siaga_persistence_active else ""
-
-            # Tambahkan persistence time status
-            persistence_time_status = ""
-            if self.tracker.persistence_time_active:
-                persistence_elapsed = time.time() - (self.tracker.siaga_cleared_time or time.time())
-                persistence_remaining = self.tracker.persistence_time_duration - persistence_elapsed
-                if persistence_remaining > 0:
-                    persistence_time_status = f" [PERSISTENCE: {persistence_remaining:.1f}s]"
-
-            debug_status = f"Status: {status}{persistence_status}{persistence_time_status}"
-            cv2.putText(
-                frame,
-                debug_status,
-                (10, legend_y + 40),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.3,
-                (200, 200, 200),
-                1
-            )
 
         # FASE & PROGRESS BAR - Di atas Legend (Pojok Kiri Bawah, Horizontal)
         # Define variables first for focus box positioning
@@ -1281,19 +1329,20 @@ class RealTimeDistanceDetector:
         cv2.putText(frame, "Menjauh", (legend_margin + 145, legend_y_bottom + 20),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.25, (255, 255, 255), 1)
 
-        # Time - Pojok Kanan Atas (di luar box hitam)
+        # Time - Tengah Bawah (di atas legend)
         timestamp = datetime.now().strftime("%H:%M:%S")
         time_text = f"{timestamp}"
-        (time_w, time_h), _ = cv2.getTextSize(time_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-        time_x = frame_width - time_w - 10
+        (time_w, time_h), _ = cv2.getTextSize(time_text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+        time_x = (frame_width - time_w) // 2  # Center horizontal
+        time_y = legend_y_bottom - 10  # Just above legend box
         cv2.putText(
             frame,
             time_text,
-            (time_x, 22),
+            (time_x, time_y),
             cv2.FONT_HERSHEY_SIMPLEX,
-            0.5,
+            0.6,
             (255, 255, 255),
-            1
+            2
         )
 
         # BUTTONS - Pojok Kanan Bawah (Loop Detector & Tap Card)
@@ -1375,6 +1424,7 @@ class RealTimeDistanceDetector:
         print("  - Press 'l' to trigger LOOP DETECTOR (FASE 3)")
         print("  - Press 't' to trigger TAP CARD (FASE 4)")
         print("  - Press ENTER to SELESAI (saat preview)")
+        print("  - Press 'h' to show HELP/BANTUAN")
         print("  - Press '+' to increase confidence threshold")
         print("  - Press '-' to decrease confidence threshold")
         print("="*70 + "\n")
@@ -1427,14 +1477,17 @@ class RealTimeDistanceDetector:
                     print(f"\n[OK] Snapshot saved: {filename}")
                 elif key == ord('l'):
                     # Trigger LOOP DETECTOR
-                    self.trigger_loop_detector()
+                    self.trigger_loop_detector(frame)
                 elif key == ord('t'):
                     # Trigger TAP CARD
-                    self.trigger_tap_card()
+                    self.trigger_tap_card(frame)
                 elif key == 13:  # Enter key
                     # SELESAI (hanya jika preview aktif)
                     if self.show_preview:
                         self.complete_parking_session()
+                elif key == ord('h'):
+                    # Show help popup
+                    self.show_help_popup()
                 elif key == ord('+') or key == ord('='):
                     self.confidence_threshold = min(0.9, self.confidence_threshold + 0.05)
                     print(f"\nConfidence threshold: {self.confidence_threshold:.2f}")

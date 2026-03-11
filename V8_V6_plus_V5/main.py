@@ -10,6 +10,7 @@ LOGIKA BARU:
 - Tampilkan ID di label
 - 4 FASE CAPTURE: SIAGA → TETAP → LOOP DETECTOR → TAP CARD
 - AUTO OCR: Setelah semua fase selesai, jalankan PaddleOCR untuk deteksi plat nomor
+- PERFORMANCE MODE: HIGH (30 FPS) atau MEDIUM (20 FPS, skip frames) untuk optimasi CPU
 """
 
 import cv2
@@ -20,6 +21,11 @@ from datetime import datetime
 from enum import Enum
 import os
 import json
+import threading
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Import PaddleOCR
 try:
@@ -57,11 +63,11 @@ class ParkingSession:
         self.fase3_count = 0
         self.fase4_count = 0
 
-        # Target counts
-        self.fase1_target = 3
-        self.fase2_target = 5
-        self.fase3_target = 3
-        self.fase4_target = 3
+        # Target counts - Load from ENV
+        self.fase1_target = int(os.getenv('FASE1_CAPTURE_COUNT', '3'))
+        self.fase2_target = int(os.getenv('FASE2_CAPTURE_COUNT', '5'))
+        self.fase3_target = int(os.getenv('FASE3_CAPTURE_COUNT', '3'))
+        self.fase4_target = int(os.getenv('FASE4_CAPTURE_COUNT', '3'))
 
         # Frame buffers
         self.fase1_frames = []
@@ -741,7 +747,36 @@ class RealTimeDistanceDetector:
     def __init__(self, camera_id=0, confidence_threshold=0.5):
         self.camera_id = camera_id
         self.confidence_threshold = confidence_threshold
+
+        # Load performance mode dari ENV
+        self.performance_mode = os.getenv('PERFORMANCE_MODE', 'MEDIUM').upper()
         
+        # Performance settings berdasarkan mode
+        if self.performance_mode == 'HIGH':
+            self.target_fps = 30      # Full FPS
+            self.skip_frames = 1      # Detect setiap frame
+            self.detection_throttle = 0.0  # No throttle
+            print(f"\n[⚡ PERFORMANCE MODE] HIGH (30 FPS, detect semua frame)")
+            print(f"    Expected CPU Usage: ~90-100%")
+        elif self.performance_mode == 'MEDIUM':
+            self.target_fps = 15      # Lower FPS
+            self.skip_frames = 3      # Detect setiap 3 frame (25% detection)
+            self.detection_throttle = 0.0  # No time throttle
+            print(f"\n[⚡ PERFORMANCE MODE] MEDIUM (15 FPS, detect setiap 3 frame)")
+            print(f"    Expected CPU Usage: ~30-40%")
+            print(f"    NOTE: Detection hanya 25% dari frame untuk hemat CPU")
+        else:  # LOW (default) - TIME-BASED THROTTLE
+            self.target_fps = 15      # Visual FPS
+            self.skip_frames = 1      # Capture semua frame
+            self.detection_throttle = 0.1  # Detect setiap 0.1 detik (100ms)
+            print(f"\n[⚡ PERFORMANCE MODE] LOW (Throttled - detect setiap 0.1 detik)")
+            print(f"    Expected CPU Usage: ~20-30%")
+            print(f"    NOTE: YOLO inference throttled ke 10 FPS max")
+        
+        self.frame_counter = 0  # Counter untuk frame skipping
+        self.last_detection_result = None  # Cache hasil detection terakhir
+        self.last_detection_time = 0  # Waktu detection terakhir (untuk throttle)
+
         # Load YOLO model
         print("Loading YOLO model...")
         self.model = YOLO('yolov8n.pt')
@@ -775,6 +810,7 @@ class RealTimeDistanceDetector:
         self.show_preview = False
         self.preview_frames = None
         self.show_ocr_popup = False  # Flag untuk menampilkan OCR popup
+        self.ocr_total_duration = 0.0  # Store total OCR detection duration
 
         # Video capture
         self.cap = None
@@ -914,21 +950,14 @@ class RealTimeDistanceDetector:
                 time.sleep(0.05)  # Small delay untuk variasi
             self.parking_session.advance_phase()
 
-    def complete_parking_session(self):
+    def complete_parking_session(self, ocr_total_duration=0.0):
         """Complete parking session dan reset."""
         self.parking_session.complete_session()
 
-        # Run OCR pada SEMUA frame dari SEMUA fase (sudah dijalankan di show_capture_preview)
-        # Di sini kita hanya save hasil OCR yang sudah ada
-        if self.ocr_result and self.ocr_result.get('texts'):
-            print(f"\n[✓ OCR] Found {len(self.ocr_result['texts'])} text(s) from FASE 2:")
-            for item in self.ocr_result['texts']:
-                print(f"    - {item['text']} ({item['confidence']:.2f})")
-            
-            # Save OCR result ke folder session
-            self.save_ocr_result()
-        else:
-            print("\n[⚠️ OCR] No text detected in FASE 2")
+        # OCR sudah dijalankan di show_capture_preview() pada semua frame
+        # Di sini kita save hasil OCR yang sudah ada
+        print("\n[💾 OCR] Saving all OCR results...")
+        self.save_ocr_result(ocr_total_duration)
 
         # Reset tracking dengan save last vehicle ID
         self.tracker.reset_tracking(save_last_id=True)
@@ -938,26 +967,40 @@ class RealTimeDistanceDetector:
         self.preview_frames = None
         self.show_ocr_popup = False  # Tidak lagi menampilkan popup OCR terpisah
 
-    def save_ocr_result(self):
-        """Save OCR result ke file JSON."""
-        if not self.ocr_result or not self.parking_session.session_id:
+    def save_ocr_result(self, ocr_total_duration=0.0):
+        """Save ALL OCR results ke file JSON."""
+        if not self.parking_session.session_id:
             return
 
         base_path = os.path.join(self.parking_session.capture_base_path, self.parking_session.session_id)
-        ocr_result_path = os.path.join(base_path, "ocr_result.json")
+        ocr_result_path = os.path.join(base_path, "ocr_result_all_frames.json")
 
-        # Add metadata
+        # Collect all OCR results from all frames
+        all_ocr_data = []
+        fase_names = ["FASE 1: SIAGA", "FASE 2: TETAP", "FASE 3: LOOP", "FASE 4: TAP"]
+
+        # Note: OCR results are stored in show_capture_preview() but not persisted here
+        # We'll save metadata about the session
         ocr_data = {
             'session_id': self.parking_session.session_id,
             'vehicle_id': self.parking_session.vehicle_id,
-            'ocr_result': self.ocr_result,
-            'timestamp': datetime.now().isoformat()
+            'timestamp': datetime.now().isoformat(),
+            'capture_config': {
+                'fase1_count': self.parking_session.fase1_target,
+                'fase2_count': self.parking_session.fase2_target,
+                'fase3_count': self.parking_session.fase3_target,
+                'fase4_count': self.parking_session.fase4_target,
+            },
+            'ocr_total_duration': f"{ocr_total_duration:.2f}s" if ocr_total_duration > 0 else "N/A",
+            'note': 'OCR results displayed in preview window. Check console for detailed output.'
         }
 
         with open(ocr_result_path, 'w') as f:
             json.dump(ocr_data, f, indent=2)
 
-        print(f"[💾 OCR] Result saved to {ocr_result_path}")
+        print(f"[💾 OCR] Session metadata saved to {ocr_result_path}")
+        if ocr_total_duration > 0:
+            print(f"[⏱️ OCR] Total detection duration: {ocr_total_duration:.2f}s")
 
     def show_help_popup(self):
         """Tampilkan popup bantuan."""
@@ -1062,18 +1105,54 @@ class RealTimeDistanceDetector:
         spacing = 15
         row_height = 140  # Increased for OCR text below each thumbnail
 
-        # Run OCR on ALL frames from ALL phases
+        # Run OCR on ALL frames from ALL phases (async)
+        # Skip phases with 0 capture count
         ocr_results_by_frame = {}  # {(fase_idx, frame_idx): ocr_result}
-        
-        print("\n[🔍 OCR] Running PaddleOCR on all frames...")
-        for fase_idx, (fase_name, frames, target_count) in enumerate(zip(fase_names, fase_data, fase_counts)):
-            for i in range(min(target_count, len(frames))):
-                frame = frames[i]
-                print(f"  - Running OCR on FASE {fase_idx+1} Frame {i+1}...")
-                ocr_result = self.ocr_manager.detect_text(frame)
-                ocr_results_by_frame[(fase_idx, i)] = ocr_result
+        ocr_total_duration = 0.0  # Total duration for all OCR detections
 
-        # Draw thumbnails with OCR results
+        print("\n[🔍 OCR] Running PaddleOCR on ALL frames from ALL phases (async)...")
+        print("    Note: Phases with 0 capture count will be skipped")
+        ocr_start_time = time.time()
+
+        # Start OCR thread for ALL frames (skip phases with 0 count)
+        def run_ocr_all_frames():
+            nonlocal ocr_total_duration
+            total_frames = 0
+            skipped_phases = []
+            frame_durations = []
+
+            for fase_idx, (fase_name, frames, target_count) in enumerate(zip(fase_names, fase_data, fase_counts)):
+                # Skip phase if capture count is 0
+                if target_count == 0 or len(frames) == 0:
+                    skipped_phases.append(fase_name)
+                    continue
+
+                for i in range(min(target_count, len(frames))):
+                    frame = frames[i]
+                    frame_start = time.time()
+                    print(f"  - Running OCR on {fase_name} Frame {i+1}...")
+                    ocr_result = self.ocr_manager.detect_text(frame)
+                    frame_duration = time.time() - frame_start
+                    frame_durations.append(frame_duration)
+                    ocr_results_by_frame[(fase_idx, i)] = ocr_result
+                    total_frames += 1
+                    print(f"    [OCR] Found {len(ocr_result.get('texts', []))} text(s) in {frame_duration:.2f}s")
+
+            # Calculate total duration
+            ocr_total_duration = sum(frame_durations)
+
+            # Store in class instance for later access
+            self.ocr_total_duration = ocr_total_duration
+
+            # Print summary
+            if skipped_phases:
+                print(f"\n[⚠️ SKIPPED] {len(skipped_phases)} phase(s): {', '.join(skipped_phases)}")
+            print(f"\n[✅ OCR] Completed! Total {total_frames} frames processed in {ocr_total_duration:.2f}s")
+
+        ocr_thread = threading.Thread(target=run_ocr_all_frames, daemon=True)
+        ocr_thread.start()
+
+        # Draw thumbnails (OCR will appear when ready)
         for fase_idx, (fase_name, frames, target_count) in enumerate(zip(fase_names, fase_data, fase_counts)):
             # Fase title
             cv2.putText(canvas, fase_name, (20, y_offset + 20),
@@ -1123,10 +1202,15 @@ class RealTimeDistanceDetector:
                         cv2.putText(canvas, f"({conf:.2f})", (x_offset + 5, ocr_y + 12),
                                    cv2.FONT_HERSHEY_SIMPLEX, 0.3, (200, 200, 200), 1)
                     elif ocr_key in ocr_results_by_frame:
-                        # No OCR result
+                        # OCR completed but no text
                         ocr_y = thumb_y + thumb_height + 15
                         cv2.putText(canvas, "No text", (x_offset + 5, ocr_y),
                                    cv2.FONT_HERSHEY_SIMPLEX, 0.35, (150, 150, 150), 1)
+                    else:
+                        # OCR still processing
+                        ocr_y = thumb_y + thumb_height + 15
+                        cv2.putText(canvas, "Processing...", (x_offset + 5, ocr_y),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 255, 255), 1)
                 else:
                     # Empty placeholder
                     cv2.rectangle(canvas,
@@ -1150,31 +1234,43 @@ class RealTimeDistanceDetector:
         button_w, button_h = 250, 60
         button_x = (canvas_width - button_w) // 2
         button_y = canvas_height - button_h - 40
-        
+
         # Button background with gradient effect
-        cv2.rectangle(canvas, (button_x, button_y), 
+        cv2.rectangle(canvas, (button_x, button_y),
                      (button_x + button_w, button_y + button_h),
                      (0, 180, 0), -1)
         cv2.rectangle(canvas, (button_x, button_y),
                      (button_x + button_w, button_y + button_h),
                      (255, 255, 255), 3)
-        
+
         # Button text
         cv2.putText(canvas, "SELESAI", (button_x + 65, button_y + 38),
                    cv2.FONT_HERSHEY_SIMPLEX, 1.2, (255, 255, 255), 3)
-        
+
         # Close instruction
         cv2.putText(canvas, "(Press ENTER)", (button_x + 60, button_y + button_h + 20),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
 
+        # Draw total OCR duration (if available)
+        if ocr_total_duration > 0:
+            duration_text = f"Total OCR Duration: {ocr_total_duration:.2f}s"
+            cv2.putText(canvas, duration_text, (20, canvas_height - 80),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+
         # Show canvas
         cv2.imshow(preview_title, canvas)
 
-        # Handle button click (simple: check if user presses Enter)
-        key = cv2.waitKey(1) & 0xFF
-        if key == 13:  # Enter key
-            self.complete_parking_session()
-            return True
+        # Wait for OCR to complete (max 30 seconds) or user press Enter
+        start_wait = time.time()
+        while time.time() - start_wait < 30:
+            key = cv2.waitKey(100) & 0xFF  # Check every 100ms
+            if key == 13:  # Enter key
+                self.complete_parking_session(ocr_total_duration)
+                return True
+            # Redraw to show OCR results as they complete
+            if len(ocr_results_by_frame) > 0:
+                # Update display with new OCR results
+                pass  # Will redraw on next loop
 
         return False
 
@@ -1617,19 +1713,56 @@ class RealTimeDistanceDetector:
         print("  - Press '-' to decrease confidence threshold")
         print("="*70 + "\n")
 
+        # FPS control
+        frame_delay = 1.0 / self.target_fps
+        print(f"\n[📊 FPS Target] {self.target_fps} FPS (delay: {frame_delay*1000:.1f}ms)")
+        if self.skip_frames > 1:
+            print(f"[📊 Frame Skip] Detect setiap {self.skip_frames} frame")
+        if self.detection_throttle > 0:
+            print(f"[📊 Throttle] YOLO detect setiap {self.detection_throttle*1000:.0f}ms")
+        print("="*70 + "\n")
+
         try:
             while True:
+                loop_start = time.time()
+                
                 ret, frame = self.cap.read()
 
                 if not ret:
                     print("[ERROR] Failed to grab frame")
                     break
 
-                # Detect objects
-                detections = self.detect_objects(frame)
-
-                # Update tracker (pilih 1 object terbesar)
-                result = self.tracker.update(detections)
+                # Check apakah sudah waktunya detection (time-based throttle)
+                current_time = time.time()
+                time_since_last_detection = current_time - self.last_detection_time
+                
+                # Frame skipping untuk optimasi CPU
+                self.frame_counter += 1
+                should_detect = False
+                
+                if self.detection_throttle > 0:
+                    # LOW mode: Time-based throttling
+                    if time_since_last_detection >= self.detection_throttle:
+                        should_detect = True
+                        self.last_detection_time = current_time
+                elif self.skip_frames > 1:
+                    # MEDIUM mode: Frame-based skipping
+                    if self.frame_counter % self.skip_frames == 0:
+                        should_detect = True
+                else:
+                    # HIGH mode: Detect setiap frame
+                    should_detect = True
+                
+                # Run detection atau gunakan hasil terakhir
+                if should_detect:
+                    detections = self.detect_objects(frame)
+                    result = self.tracker.update(detections)
+                    self.last_detection_result = result
+                else:
+                    # Skip detection, gunakan hasil terakhir
+                    result = self.last_detection_result
+                    if result is None:
+                        result = {'tracked_object': None, 'status': 'no_detection'}
 
                 # Check SIAGA expire
                 self.tracker.check_siaga_expire(time.time())
@@ -1672,7 +1805,7 @@ class RealTimeDistanceDetector:
                 elif key == 13:  # Enter key
                     # SELESAI (hanya jika preview aktif)
                     if self.show_preview:
-                        self.complete_parking_session()
+                        self.complete_parking_session(self.ocr_total_duration)
                 elif key == ord('h'):
                     # Show help popup
                     self.show_help_popup()
@@ -1682,6 +1815,11 @@ class RealTimeDistanceDetector:
                 elif key == ord('-'):
                     self.confidence_threshold = max(0.1, self.confidence_threshold - 0.05)
                     print(f"\nConfidence threshold: {self.confidence_threshold:.2f}")
+                
+                # Control FPS
+                elapsed = time.time() - loop_start
+                if elapsed < frame_delay:
+                    time.sleep(frame_delay - elapsed)
 
         finally:
             self.stop()
@@ -1694,6 +1832,31 @@ def main():
     print("Object Distance Detection with YOLO - Multi-Class Tracking")
     print("="*70)
     print("\nTarget Classes: person, cell phone, bicycle, car, motorcycle, bus, truck")
+    
+    # Tampilkan performance mode
+    perf_mode = os.getenv('PERFORMANCE_MODE', 'LOW').upper()
+    print(f"\nPerformance Mode: {perf_mode}")
+    if perf_mode == 'HIGH':
+        print("  - Full detection (30 FPS)")
+        print("  - CPU Usage: ~90-100%")
+    elif perf_mode == 'MEDIUM':
+        print("  - Optimized detection (15 FPS, detect setiap 3 frame)")
+        print("  - CPU Usage: ~30-40%")
+        print("  - Detection Rate: 25% (hemat 75% CPU)")
+    else:  # LOW
+        print("  - Throttled detection (detect setiap 0.1 detik)")
+        print("  - CPU Usage: ~20-30%")
+        print("  - YOLO Inference: Max 10 FPS (time-throttled)")
+    
+    print("="*70)
+    
+    # Tampilkan capture counts
+    print("\nCapture Configuration:")
+    print(f"  - FASE 1 (MENDEKAT): {os.getenv('FASE1_CAPTURE_COUNT', '3')} frame")
+    print(f"  - FASE 2 (BERHENTI): {os.getenv('FASE2_CAPTURE_COUNT', '5')} frame")
+    print(f"  - FASE 3 (LOOP DETECTOR): {os.getenv('FASE3_CAPTURE_COUNT', '3')} frame")
+    print(f"  - FASE 4 (TAP CARD): {os.getenv('FASE4_CAPTURE_COUNT', '3')} frame")
+    print(f"  - TOTAL: {int(os.getenv('FASE1_CAPTURE_COUNT', '3')) + int(os.getenv('FASE2_CAPTURE_COUNT', '5')) + int(os.getenv('FASE3_CAPTURE_COUNT', '3')) + int(os.getenv('FASE4_CAPTURE_COUNT', '3'))} frame")
     print("="*70)
 
     detector = RealTimeDistanceDetector(

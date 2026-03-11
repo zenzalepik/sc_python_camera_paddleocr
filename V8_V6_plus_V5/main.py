@@ -1005,9 +1005,9 @@ class RealTimeDistanceDetector:
     def show_help_popup(self):
         """Tampilkan popup bantuan."""
         help_title = "BANTUAN - Parking System Capture"
-        
+
         # Create canvas untuk help popup
-        canvas_height = 500
+        canvas_height = 580
         canvas_width = 600
         canvas = np.zeros((canvas_height, canvas_width, 3), dtype=np.uint8)
         canvas[:] = (40, 40, 40)  # Dark gray background
@@ -1035,6 +1035,11 @@ class RealTimeDistanceDetector:
             ("Q - Quit aplikasi", 0.4, (255, 255, 255), 350),
             ("S - Save snapshot", 0.4, (255, 255, 255), 370),
             ("+/- - Adjust confidence threshold", 0.4, (255, 255, 255), 390),
+            ("", 0, (0, 0, 0), 0),
+            ("SCROLL (Preview Window):", 0.5, (0, 255, 255), 415),
+            ("", 0, (0, 0, 0), 0),
+            ("UP/DOWN Arrow - Scroll preview", 0.4, (255, 255, 255), 445),
+            ("Page Up/Down - Fast scroll", 0.4, (255, 255, 255), 465),
         ]
         
         y_offset = 0
@@ -1078,7 +1083,7 @@ class RealTimeDistanceDetector:
 
         # Create preview window
         preview_title = f"📸 Capture Preview - {self.parking_session.session_id}"
-        
+
         # Calculate grid layout
         fase_names = ["FASE 1: SIAGA", "FASE 2: TETAP", "FASE 3: LOOP", "FASE 4: TAP"]
         fase_data = [
@@ -1089,14 +1094,36 @@ class RealTimeDistanceDetector:
         ]
         fase_counts = [3, 5, 3, 3]
 
-        # Create a larger canvas for preview (taller to show OCR below each thumbnail)
-        canvas_height = 950  # Increased height for OCR text
+        # Create a larger canvas for preview (scrollable)
         canvas_width = 1200
+        base_height = 200  # Base height for title and buttons
+        thumb_row_height = 180  # Height per row of thumbnails with OCR
+        max_rows = 8  # Maximum rows visible without scroll
+        
+        # Calculate total content height
+        total_rows = 0
+        for target_count in fase_counts:
+            rows_for_fase = (target_count + 4) // 5  # 5 thumbnails per row
+            total_rows += max(1, rows_for_fase)
+        
+        content_height = total_rows * thumb_row_height + 200  # +200 for title, progress, duration, button
+        canvas_height = max(700, content_height)  # Minimum height
+        scroll_enabled = canvas_height > 900  # Enable scroll if taller than 900px
+        
+        # Visible viewport height
+        viewport_height = 900 if scroll_enabled else canvas_height
+        
+        # Create canvas
         canvas = np.zeros((canvas_height, canvas_width, 3), dtype=np.uint8)
         canvas[:] = (40, 40, 40)  # Dark gray background
+        
+        # Scroll state
+        scroll_offset = 0
+        scroll_step = 40
+        max_scroll = max(0, canvas_height - viewport_height)
 
         # Title
-        cv2.putText(canvas, preview_title, (20, 35), 
+        cv2.putText(canvas, preview_title, (20, 35),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
 
         y_offset = 60
@@ -1104,6 +1131,10 @@ class RealTimeDistanceDetector:
         thumb_height = 75
         spacing = 15
         row_height = 140  # Increased for OCR text below each thumbnail
+        
+        # Adjust y_offset for scroll
+        if scroll_enabled:
+            y_offset = 80  # More space for title
 
         # Run OCR on ALL frames from ALL phases (async)
         # Skip phases with 0 capture count
@@ -1151,6 +1182,54 @@ class RealTimeDistanceDetector:
 
         ocr_thread = threading.Thread(target=run_ocr_all_frames, daemon=True)
         ocr_thread.start()
+
+        # Progress bar settings
+        total_frames_to_process = sum(min(target_count, len(frames)) 
+                                      for frames, target_count in zip(fase_data, fase_counts) 
+                                      if target_count > 0 and len(frames) > 0)
+        progress_bar_width = canvas_width - 100
+        progress_bar_height = 20
+        progress_x = 50
+        progress_y = canvas_height - 180
+
+        # Draw initial state
+        def draw_progress_bar(completed_frames=0):
+            """Draw progress bar on canvas."""
+            # Clear progress area
+            cv2.rectangle(canvas, (progress_x - 10, progress_y - 25), 
+                         (progress_x + progress_bar_width + 10, progress_y + progress_bar_height + 25),
+                         (40, 40, 40), -1)
+            
+            # Progress bar label
+            cv2.putText(canvas, "OCR Progress:", (progress_x, progress_y - 5),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            
+            # Background bar
+            cv2.rectangle(canvas, (progress_x, progress_y), 
+                         (progress_x + progress_bar_width, progress_y + progress_bar_height),
+                         (100, 100, 100), -1)
+            
+            # Progress fill
+            if total_frames_to_process > 0:
+                fill_width = int((completed_frames / total_frames_to_process) * progress_bar_width)
+                cv2.rectangle(canvas, (progress_x, progress_y), 
+                             (progress_x + fill_width, progress_y + progress_bar_height),
+                             (0, 255, 0), -1)
+            
+            # Progress text
+            progress_text = f"{completed_frames}/{total_frames_to_process} frames"
+            cv2.putText(canvas, progress_text, (progress_x + progress_bar_width - 120, progress_y + 15),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+        
+        # Draw initial progress bar
+        draw_progress_bar(0)
+        
+        # Draw duration area (will update)
+        duration_y = canvas_height - 130
+        cv2.rectangle(canvas, (20, duration_y - 10), (canvas_width - 20, duration_y + 30),
+                     (40, 40, 40), -1)
+        cv2.putText(canvas, "Total OCR Duration: Processing...", (20, duration_y + 15),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 1)
 
         # Draw thumbnails (OCR will appear when ready)
         for fase_idx, (fase_name, frames, target_count) in enumerate(zip(fase_names, fase_data, fase_counts)):
@@ -1251,28 +1330,82 @@ class RealTimeDistanceDetector:
         cv2.putText(canvas, "(Press ENTER)", (button_x + 60, button_y + button_h + 20),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
 
-        # Draw total OCR duration (if available)
-        if ocr_total_duration > 0:
-            duration_text = f"Total OCR Duration: {ocr_total_duration:.2f}s"
-            cv2.putText(canvas, duration_text, (20, canvas_height - 80),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-
-        # Show canvas
-        cv2.imshow(preview_title, canvas)
-
         # Wait for OCR to complete (max 30 seconds) or user press Enter
         start_wait = time.time()
+        last_completed = 0
+        last_duration = 0.0
+        
         while time.time() - start_wait < 30:
             key = cv2.waitKey(100) & 0xFF  # Check every 100ms
+
+            # Count completed frames
+            completed_frames = len(ocr_results_by_frame)
+
+            # Calculate current duration
+            current_duration = sum(ocr_results_by_frame.get(k, {}).get('processing_time', 0)
+                                   for k in ocr_results_by_frame)
+
+            # Update display if progress or duration changed
+            if completed_frames != last_completed or abs(current_duration - last_duration) > 0.01:
+                # Update progress bar
+                draw_progress_bar(completed_frames)
+
+                # Update duration display
+                cv2.rectangle(canvas, (20, duration_y - 10), (canvas_width - 20, duration_y + 30),
+                             (40, 40, 40), -1)
+                if completed_frames > 0:
+                    duration_text = f"Total OCR Duration: {current_duration:.2f}s"
+                else:
+                    duration_text = "Total OCR Duration: Processing..."
+                cv2.putText(canvas, duration_text, (20, duration_y + 15),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 1)
+                
+                # Draw scrollbar if enabled
+                if scroll_enabled:
+                    self._draw_scrollbar(canvas, scroll_offset, max_scroll, viewport_height, canvas_width, canvas_height)
+                    # Show viewport with scroll
+                    viewport = canvas[scroll_offset:scroll_offset + viewport_height, :]
+                    cv2.imshow(preview_title, viewport)
+                else:
+                    cv2.imshow(preview_title, canvas)
+                last_completed = completed_frames
+                last_duration = current_duration
+
+            # Handle scroll with mouse wheel (keys: up/down arrow or page up/down)
+            if key == 80:  # Down arrow
+                scroll_offset = min(scroll_offset + scroll_step, max_scroll)
+            elif key == 82:  # Up arrow
+                scroll_offset = max(scroll_offset - scroll_step, 0)
+            elif key == 81:  # Page Down
+                scroll_offset = min(scroll_offset + viewport_height - 50, max_scroll)
+            elif key == 83:  # Page Up
+                scroll_offset = max(scroll_offset - viewport_height + 50, 0)
+
             if key == 13:  # Enter key
-                self.complete_parking_session(ocr_total_duration)
+                self.complete_parking_session(current_duration)
                 return True
-            # Redraw to show OCR results as they complete
-            if len(ocr_results_by_frame) > 0:
-                # Update display with new OCR results
-                pass  # Will redraw on next loop
 
         return False
+
+    def _draw_scrollbar(self, canvas, scroll_offset, max_scroll, viewport_height, canvas_width, canvas_height):
+        """Draw scrollbar on the right side of the canvas."""
+        bar_width = 12
+        bar_x = canvas_width - bar_width - 5
+        
+        # Draw track
+        cv2.rectangle(canvas, (bar_x, 50), (canvas_width - 5, viewport_height - 50), (60, 60, 60), -1)
+        
+        # Calculate thumb position and height
+        if max_scroll > 0:
+            thumb_height = max(30, int((viewport_height / canvas_height) * (viewport_height - 100)))
+            thumb_y = int(50 + (scroll_offset / max_scroll) * (viewport_height - 100 - thumb_height))
+            cv2.rectangle(canvas, (bar_x, thumb_y), (canvas_width - 5, thumb_y + thumb_height), (150, 150, 150), -1)
+        
+        # Draw scroll hints
+        if scroll_offset > 0:
+            cv2.putText(canvas, "^", (bar_x + 2, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
+        if scroll_offset < max_scroll:
+            cv2.putText(canvas, "v", (bar_x + 2, viewport_height - 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
 
     def draw_detections(self, frame, result):
         """Draw detection pada frame dengan ID dan status."""

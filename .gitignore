@@ -18,3 +18,5 @@ __pycache__/
 
 # Environment variables
 # .env
+
+/gate_in

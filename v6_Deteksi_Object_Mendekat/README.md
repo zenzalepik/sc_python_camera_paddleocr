@@ -42,28 +42,10 @@ python main.py
 
 Untuk menyembunyikan semua elemen UI dan hanya menampilkan camera view:
 
-**Via Environment Variable:**
-```bash
-# Windows Command Prompt
-set CLEAN_UI=true && python main.py
-
-# Windows PowerShell
-$env:CLEAN_UI="true"; python main.py
-
-# Linux/Mac
-export CLEAN_UI=true && python main.py
-```
-
-**Via .env File:**
-```bash
-# Edit file .env
-CLEAN_UI=true
-```
-
-**Via run.bat (Windows):**
-```bash
-# Edit file .env yang otomatis dibuat, ubah CLEAN_UI=false menjadi CLEAN_UI=true
-run.bat
+**Via variables.py:**
+```python
+# Edit file variables.py
+CLEAN_UI = True
 ```
 
 ---
@@ -96,6 +78,60 @@ Mode ini menyembunyikan semua elemen visual UI (bounding box, label, panel, lege
 - Integrasi dengan sistem lain
 - Debugging via terminal logs
 - Performance testing tanpa rendering overhead
+
+---
+
+## ⚡ Camera Optimization
+
+Untuk membuat camera lebih smooth tanpa mengubah logika sistem:
+
+### **1. Edit file `variables.py`**
+
+```python
+# Resolution - Lower = smoother, Higher = better quality
+CAMERA_WIDTH = 320
+CAMERA_HEIGHT = 240
+
+# YOLO Frame Skipping
+# 0 = Detect every frame (accurate)
+# 1 = Skip 1 frame (balanced - RECOMMENDED)
+# 2 = Skip 2 frames (very smooth)
+YOLO_SKIP_FRAMES = 0
+```
+
+### **2. Rekomendasi Settings**
+
+| Use Case | Resolution | YOLO_SKIP_FRAMES | Expected FPS |
+|----------|-----------|------------------|--------------|
+| **Smooth** | 320x240 | 1 | ~30 FPS |
+| **Balanced** | 320x240 | 0 | ~20 FPS |
+| **Quality** | 640x480 | 1 | ~15 FPS |
+| **Max Accuracy** | 640x480 | 0 | ~10 FPS |
+
+### **3. Cara Kerja Optimasi**
+
+**Resolution (320x240 vs 640x480):**
+- Resolusi lebih rendah = frame lebih kecil = YOLO inference lebih cepat
+- Sistem tetap bekerja dengan parameter yang sama
+- Hanya ukuran input yang berbeda, akurasi tetap baik
+
+**Frame Skipping:**
+- `YOLO_SKIP_FRAMES=0`: YOLO detect setiap frame (paling akurat)
+- `YOLO_SKIP_FRAMES=1`: YOLO detect setiap 2 frame (skip 1 frame)
+- `YOLO_SKIP_FRAMES=2`: YOLO detect setiap 3 frame (skip 2 frame)
+- Frame yang di-skip menggunakan hasil deteksi sebelumnya (cache)
+- Tracking dan SIAGA logic tetap berjalan normal
+
+### **4. Test Performance**
+
+Saat aplikasi start, akan muncul info di terminal:
+```
+[INFO] Camera view area: 320x240 = 76800px
+[INFO] Camera FPS: 30.0
+[INFO] YOLO skip frames: 0
+```
+
+Monitor FPS di pojok kiri atas window (jika CLEAN_UI=false).
 
 ---
 

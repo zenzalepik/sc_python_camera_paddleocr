@@ -18,41 +18,32 @@ from datetime import datetime
 from enum import Enum
 import os
 
-# CLEAN_UI mode: Hide all UI elements, show only camera view
-# Set via environment variable: CLEAN_UI=true
-# Or create a .env file with: CLEAN_UI=true
-def load_clean_ui_setting():
-    """Load CLEAN_UI setting from .env file or environment variable."""
-    # First check environment variable (highest priority)
-    env_value = os.environ.get('CLEAN_UI', '').lower()
-    if env_value:
-        return env_value == 'true'
-    
-    # Then check .env file in same directory as main.py
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    env_file_path = os.path.join(script_dir, '.env')
-    
-    if os.path.exists(env_file_path):
-        try:
-            with open(env_file_path, 'r') as f:
-                for line in f:
-                    line = line.strip()
-                    if line.startswith('CLEAN_UI='):
-                        value = line.split('=', 1)[1].strip().lower()
-                        return value == 'true'
-        except:
-            pass
-    
-    # Default: False (show full UI)
-    return False
+# Import configuration from variables.py
+from variables import (
+    CLEAN_UI,
+    CAMERA_WIDTH,
+    CAMERA_HEIGHT,
+    YOLO_SKIP_FRAMES,
+    YOLO_CONFIDENCE_THRESHOLD,
+    TARGET_CLASSES,
+    MAX_HISTORY,
+    SIAGA_FRAME_THRESHOLD,
+    SIAGA_HOLD_TIME,
+    FASE1_TARGET,
+    FASE2_TARGET,
+    FASE3_TARGET,
+    FASE4_TARGET,
+    WINDOW_SCALE,
+    SHOW_FPS
+)
 
-CLEAN_UI = load_clean_ui_setting()
+# Print startup info
 if CLEAN_UI:
     print("\n[🎯 CLEAN_UI MODE] All UI elements hidden - only camera view shown")
     print("   Terminal logs remain active for debugging\n")
 else:
     print("\n[🎨 FULL UI MODE] All visual elements enabled")
-    print("   To enable CLEAN_UI mode, set CLEAN_UI=true in .env file\n")
+    print("   Edit variables.py to change settings\n")
 
 
 class ParkingPhase(Enum):
@@ -82,11 +73,11 @@ class ParkingSession:
         self.fase3_count = 0
         self.fase4_count = 0
 
-        # Target counts
-        self.fase1_target = 3
-        self.fase2_target = 5
-        self.fase3_target = 3
-        self.fase4_target = 3
+        # Target counts (from variables.py)
+        self.fase1_target = FASE1_TARGET
+        self.fase2_target = FASE2_TARGET
+        self.fase3_target = FASE3_TARGET
+        self.fase4_target = FASE4_TARGET
 
         # Frame buffers
         self.fase1_frames = []
@@ -679,25 +670,24 @@ class ObjectDistanceTracker:
 class RealTimeDistanceDetector:
     """Real-time object distance detection dengan YOLO."""
 
-    def __init__(self, camera_id=0, confidence_threshold=0.5):
+    def __init__(self, camera_id=0, confidence_threshold=None):
         self.camera_id = camera_id
-        self.confidence_threshold = confidence_threshold
-        
+        # Use variables.py setting if not specified
+        self.confidence_threshold = confidence_threshold if confidence_threshold is not None else YOLO_CONFIDENCE_THRESHOLD
+
         # Load YOLO model
         print("Loading YOLO model...")
         self.model = YOLO('yolov8n.pt')
         print("[OK] YOLO model loaded!")
 
-        # Target classes untuk tracking:
-        # 0=person, 67=cell phone, 1=bicycle, 2=car, 3=motorcycle, 5=bus, 7=truck
-        self.target_classes = [0, 67, 1, 2, 3, 5, 7]
-        # self.target_classes = [67]
+        # Target classes untuk tracking (from variables.py)
+        self.target_classes = TARGET_CLASSES
 
-        # Initialize tracker dengan target classes
+        # Initialize tracker dengan target classes (from variables.py)
         self.tracker = ObjectDistanceTracker(
-            max_history=30,
-            siaga_frame_threshold=3,
-            siaga_hold_time=3.0,
+            max_history=MAX_HISTORY,
+            siaga_frame_threshold=SIAGA_FRAME_THRESHOLD,
+            siaga_hold_time=SIAGA_HOLD_TIME,
             target_classes=self.target_classes
         )
 
@@ -719,7 +709,12 @@ class RealTimeDistanceDetector:
         self.fps = 0
         self.frame_count = 0
         self.last_fps_time = time.time()
-        
+
+        # OPTIMASI: Frame skipping (from variables.py)
+        self.yolo_skip_frames = YOLO_SKIP_FRAMES
+        self.current_frame_count = 0
+        self.last_detections = None  # Cache hasil deteksi terakhir
+
     def start(self):
         """Start video capture."""
         self.cap = cv2.VideoCapture(self.camera_id)
@@ -728,9 +723,12 @@ class RealTimeDistanceDetector:
             print(f"[ERROR] Cannot open camera {self.camera_id}")
             return False
 
-        # Set camera resolution (tetap 640x480)
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        # OPTIMASI: Set camera resolution (from variables.py)
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_WIDTH)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_HEIGHT)
+
+        # OPTIMASI: Set FPS camera ke nilai maksimum
+        self.cap.set(cv2.CAP_PROP_FPS, 30)
 
         # Set camera view area untuk focus percentage calculation
         frame_width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -739,11 +737,15 @@ class RealTimeDistanceDetector:
 
         print(f"[OK] Camera opened: {self.camera_id}")
         print(f"[INFO] Camera view area: {frame_width}x{frame_height} = {self.tracker.camera_view_area}px")
-        
-        # Create window dengan ukuran sama dengan frame camera (640x480)
+        print(f"[INFO] Camera FPS: {self.cap.get(cv2.CAP_PROP_FPS)}")
+        print(f"[INFO] YOLO skip frames: {YOLO_SKIP_FRAMES}")
+
+        # Create window dengan ukuran sesuai WINDOW_SCALE
+        window_width = int(frame_width * WINDOW_SCALE)
+        window_height = int(frame_height * WINDOW_SCALE)
         cv2.namedWindow('Object Distance Detection - Parking System', cv2.WINDOW_NORMAL)
-        cv2.resizeWindow('Object Distance Detection - Parking System', frame_width, frame_height)
-        
+        cv2.resizeWindow('Object Distance Detection - Parking System', window_width, window_height)
+
         return True
     
     def stop(self):
@@ -1513,8 +1515,17 @@ class RealTimeDistanceDetector:
                     print("[ERROR] Failed to grab frame")
                     break
 
-                # Detect objects
-                detections = self.detect_objects(frame)
+                # OPTIMASI: Frame skipping untuk YOLO inference
+                self.current_frame_count += 1
+                
+                # Gunakan cached detection jika skip frame
+                if self.yolo_skip_frames > 0 and self.current_frame_count % (self.yolo_skip_frames + 1) != 0:
+                    # Gunakan hasil deteksi terakhir (cache)
+                    detections = self.last_detections if self.last_detections else []
+                else:
+                    # Run YOLO detection
+                    detections = self.detect_objects(frame)
+                    self.last_detections = detections  # Cache hasil deteksi
 
                 # Update tracker (pilih 1 object terbesar)
                 result = self.tracker.update(detections)

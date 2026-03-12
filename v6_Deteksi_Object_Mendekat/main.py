@@ -18,6 +18,42 @@ from datetime import datetime
 from enum import Enum
 import os
 
+# CLEAN_UI mode: Hide all UI elements, show only camera view
+# Set via environment variable: CLEAN_UI=true
+# Or create a .env file with: CLEAN_UI=true
+def load_clean_ui_setting():
+    """Load CLEAN_UI setting from .env file or environment variable."""
+    # First check environment variable (highest priority)
+    env_value = os.environ.get('CLEAN_UI', '').lower()
+    if env_value:
+        return env_value == 'true'
+    
+    # Then check .env file in same directory as main.py
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    env_file_path = os.path.join(script_dir, '.env')
+    
+    if os.path.exists(env_file_path):
+        try:
+            with open(env_file_path, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith('CLEAN_UI='):
+                        value = line.split('=', 1)[1].strip().lower()
+                        return value == 'true'
+        except:
+            pass
+    
+    # Default: False (show full UI)
+    return False
+
+CLEAN_UI = load_clean_ui_setting()
+if CLEAN_UI:
+    print("\n[🎯 CLEAN_UI MODE] All UI elements hidden - only camera view shown")
+    print("   Terminal logs remain active for debugging\n")
+else:
+    print("\n[🎨 FULL UI MODE] All visual elements enabled")
+    print("   To enable CLEAN_UI mode, set CLEAN_UI=true in .env file\n")
+
 
 class ParkingPhase(Enum):
     """Enum untuk fase-fase dalam parking session."""
@@ -827,14 +863,39 @@ class RealTimeDistanceDetector:
 
     def show_help_popup(self):
         """Tampilkan popup bantuan."""
-        help_title = "BANTUAN - Parking System Capture"
+        # CLEAN_UI mode: Skip popup, print help to terminal instead
+        if CLEAN_UI:
+            print("\n" + "="*70)
+            print("BANTUAN - Parking System Capture")
+            print("="*70)
+            print("\nCARA MENGGUNAKAN:")
+            print("1. Tunggu kendaraan terdeteksi kamera")
+            print("2. SIAGA aktif otomatis saat kendaraan mendekat")
+            print("3. FASE 1: Capture 3 frame otomatis (MENDEKAT)")
+            print("4. FASE 2: Capture 5 frame otomatis (BERHENTI)")
+            print("5. FASE 3: Tekan 'L' untuk LOOP DETECTOR (3 frame)")
+            print("6. FASE 4: Tekan 'T' untuk TAP CARD (3 frame)")
+            print("7. Preview muncul otomatis setelah FASE 4")
+            print("8. Tekan ENTER untuk SELESAI")
+            print("\nKEYBOARD SHORTCUTS:")
+            print("L - Trigger LOOP DETECTOR (FASE 3 - 3 frame)")
+            print("T - Trigger TAP CARD (FASE 4 - 3 frame)")
+            print("ENTER - SELESAI (saat preview)")
+            print("H - Tampilkan bantuan ini")
+            print("Q - Quit aplikasi")
+            print("S - Save snapshot")
+            print("+/- - Adjust confidence threshold")
+            print("="*70)
+            return True
         
+        help_title = "BANTUAN - Parking System Capture"
+
         # Create canvas untuk help popup
         canvas_height = 500
         canvas_width = 600
         canvas = np.zeros((canvas_height, canvas_width, 3), dtype=np.uint8)
         canvas[:] = (40, 40, 40)  # Dark gray background
-        
+
         # Help content (line by line)
         help_lines = [
             ("CARA MENGGUNAKAN:", 0.5, (0, 255, 255), 25),
@@ -858,39 +919,39 @@ class RealTimeDistanceDetector:
             ("S - Save snapshot", 0.4, (255, 255, 255), 350),
             ("+/- - Adjust confidence threshold", 0.4, (255, 255, 255), 370),
         ]
-        
+
         y_offset = 0
         for text, font_size, color, y in help_lines:
             if y > 0:
                 cv2.putText(canvas, text, (20, y),
                            cv2.FONT_HERSHEY_SIMPLEX, font_size, color, 1)
-        
+
         # Draw border
         cv2.rectangle(canvas, (0, 0), (canvas_width, canvas_height), (255, 255, 255), 2)
-        
+
         # Title (small, inside border)
         cv2.putText(canvas, help_title, (20, canvas_height - 15),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (200, 200, 200), 1)
-        
+
         # Show help window
         cv2.imshow(help_title, canvas)
-        
+
         # Wait for user to close
         while True:
             key = cv2.waitKey(1) & 0xFF
             if key == 13 or key == ord('h'):  # Enter or H
                 break
-            
+
             # Check mouse click or window closed
             if cv2.getWindowProperty(help_title, cv2.WND_PROP_VISIBLE) < 1:
                 break
-        
+
         # Close window (ignore error if already closed)
         try:
             cv2.destroyWindow(help_title)
         except:
             pass
-        
+
         return True
 
     def show_capture_preview(self):
@@ -900,7 +961,7 @@ class RealTimeDistanceDetector:
 
         # Create preview window
         preview_title = f"📸 Capture Preview - {self.parking_session.session_id}"
-        
+
         # Calculate grid layout
         fase_names = ["FASE 1: SIAGA", "FASE 2: TETAP", "FASE 3: LOOP", "FASE 4: TAP"]
         fase_data = [
@@ -918,7 +979,7 @@ class RealTimeDistanceDetector:
         canvas[:] = (40, 40, 40)  # Dark gray background
 
         # Title
-        cv2.putText(canvas, preview_title, (20, 35), 
+        cv2.putText(canvas, preview_title, (20, 35),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
 
         y_offset = 60
@@ -939,16 +1000,16 @@ class RealTimeDistanceDetector:
                 if i < len(frames):
                     # Resize frame to thumbnail
                     thumb = cv2.resize(frames[i], (thumb_width, thumb_height))
-                    
+
                     # Draw thumbnail border
                     border_color = (0, 255, 0) if i < len(frames) else (100, 100, 100)
-                    cv2.rectangle(canvas, 
-                                 (x_offset, y_offset), 
+                    cv2.rectangle(canvas,
+                                 (x_offset, y_offset),
                                  (x_offset + thumb_width, y_offset + thumb_height),
                                  border_color, 2)
-                    
+
                     # Place thumbnail
-                    canvas[y_offset:y_offset + thumb_height, 
+                    canvas[y_offset:y_offset + thumb_height,
                            x_offset:x_offset + thumb_width] = thumb
                 else:
                     # Empty placeholder
@@ -969,8 +1030,8 @@ class RealTimeDistanceDetector:
         button_w, button_h = 200, 50
         button_x = (canvas_width - button_w) // 2
         button_y = canvas_height - button_h - 30
-        
-        cv2.rectangle(canvas, (button_x, button_y), 
+
+        cv2.rectangle(canvas, (button_x, button_y),
                      (button_x + button_w, button_y + button_h),
                      (0, 255, 0), -1)
         cv2.rectangle(canvas, (button_x, button_y),
@@ -992,6 +1053,10 @@ class RealTimeDistanceDetector:
     
     def draw_detections(self, frame, result):
         """Draw detection pada frame dengan ID dan status."""
+        # CLEAN_UI mode: Skip all drawing
+        if CLEAN_UI:
+            return
+        
         tracked_object = result.get('tracked_object')
         status = result.get('status', 'stable')
 
@@ -1090,13 +1155,24 @@ class RealTimeDistanceDetector:
 
     def draw_info_panel(self, frame, result):
         """Draw info panel dengan FPS dan SIAGA status."""
+        # CLEAN_UI mode: Skip all drawing, but keep terminal logs
+        if CLEAN_UI:
+            # Still calculate FPS for terminal logging
+            self.frame_count += 1
+            current_time = time.time()
+            if current_time - self.last_fps_time >= 1.0:
+                self.fps = self.frame_count / (current_time - self.last_fps_time)
+                self.frame_count = 0
+                self.last_fps_time = current_time
+            return
+        
         self.frame_count += 1
         current_time = time.time()
         if current_time - self.last_fps_time >= 1.0:
             self.fps = self.frame_count / (current_time - self.last_fps_time)
             self.frame_count = 0
             self.last_fps_time = current_time
-        
+
         # Check SIAGA status
         is_siaga = self.tracker.is_siaga_active()
         siaga_cleared = self.tracker.siaga_clear_time is not None
@@ -1208,7 +1284,7 @@ class RealTimeDistanceDetector:
         fase_box_width = 220
         fase_box_height = 35
         legend_box_height = 32
-        
+
         if self.parking_session.is_active:
             frame_height, frame_width = frame.shape[:2]
             fase_y_bottom = frame_height - fase_margin - legend_box_height - 5 - fase_box_height

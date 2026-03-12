@@ -20,6 +20,7 @@ Aplikasi streaming real-time untuk deteksi object yang mendekat/menjauh dari kam
 - ✅ **Snapshot** - Simpan frame dengan deteksi
 - ✅ **Adjustable Threshold** - Atur confidence threshold on-the-fly
 - ✅ **Multi-object Tracking** - Track multiple objects sekaligus
+- ✅ **CLEAN_UI Mode** - Mode bersih tanpa UI elements, hanya camera view
 
 ---
 
@@ -37,6 +38,34 @@ pip install -r requirements.txt
 python main.py
 ```
 
+### 3. Enable CLEAN_UI Mode (Optional)
+
+Untuk menyembunyikan semua elemen UI dan hanya menampilkan camera view:
+
+**Via Environment Variable:**
+```bash
+# Windows Command Prompt
+set CLEAN_UI=true && python main.py
+
+# Windows PowerShell
+$env:CLEAN_UI="true"; python main.py
+
+# Linux/Mac
+export CLEAN_UI=true && python main.py
+```
+
+**Via .env File:**
+```bash
+# Edit file .env
+CLEAN_UI=true
+```
+
+**Via run.bat (Windows):**
+```bash
+# Edit file .env yang otomatis dibuat, ubah CLEAN_UI=false menjadi CLEAN_UI=true
+run.bat
+```
+
 ---
 
 ## 🎨 Visual Indicators
@@ -47,6 +76,26 @@ python main.py
 | 🟢 **HIJAU** | **TETAP** | Object pada jarak yang sama |
 | 🔵 **BIRU** | **MENJAUH** | Object semakin jauh dari kamera |
 | 🟠 **ORANGE + BLINKING** | **⚠️ SIAGA** | Object terdeteksi mendekat 3x berturut-turut |
+
+---
+
+## 🧹 CLEAN_UI Mode
+
+Mode ini menyembunyikan semua elemen visual UI (bounding box, label, panel, legend, dll) dan hanya menampilkan camera view bersih.
+
+**Saat CLEAN_UI=true:**
+- ❌ Tidak ada bounding box
+- ❌ Tidak ada label atau text overlay
+- ❌ Tidak ada panel info/legend
+- ❌ Tidak ada preview window
+- ✅ Terminal logs tetap aktif untuk debugging
+- ✅ Semua fungsi sistem tetap berjalan normal
+
+**Gunakan CLEAN_UI mode untuk:**
+- Recording video bersih tanpa overlay
+- Integrasi dengan sistem lain
+- Debugging via terminal logs
+- Performance testing tanpa rendering overhead
 
 ---
 

@@ -1,0 +1,68 @@
+======================================================================
+CARA DOWNLOAD YOLOv3-TINY MODEL (OpenCV DNN Compatible)
+======================================================================
+
+YOLOv3-Tiny adalah model yang PALING COMPATIBLE dengan OpenCV DNN.
+Tidak ada issue reshape layer seperti YOLOv5/v8.
+
+DOWNLOAD MANUAL (WAJIB!)
+======================================================================
+
+File yang dibutuhkan:
+1. yolov3-tiny.cfg   (~2 KB)   ✅ SUDAH ADA
+2. yolov3-tiny.weights (~34 MB) ❌ HARUS DOWNLOAD MANUAL
+
+Option A: Download dari Darknet Official Site
+----------------------------------------------
+
+1. Buka browser
+2. Kunjungi: https://pjreddie.com/media/files/yolov3-tiny.weights
+3. Save file ke folder ini:
+   D:\Github\sc_python_camera_paddleocr\V8_YOLO_OPENCV_DNN\yolov3-tiny.weights
+
+Option B: Download dari GitHub Mirror
+----------------------------------------------
+
+1. Buka browser
+2. Kunjungi: 
+   https://github.com/AlexeyAB/darknet/releases
+3. Cari file yolov3-tiny.weights
+4. Download dan save ke folder ini
+
+Option C: Pakai YOLOv3 (Full) - Alternative
+----------------------------------------------
+
+Jika yolov3-tiny tidak ada, bisa pakai YOLOv3 full:
+
+1. yolov3.cfg:
+   https://raw.githubusercontent.com/pjreddie/darknet/master/cfg/yolov3.cfg
+
+2. yolov3.weights:
+   https://pjreddie.com/media/files/yolov3.weights
+
+3. Update main.py, ganti:
+   config_path = 'yolov3.cfg'
+   weights_path = 'yolov3.weights'
+
+
+VERIFY DOWNLOAD
+======================================================================
+
+Setelah download, cek ukuran file:
+
+dir yolov3-tiny.weights
+
+Harusnya: ~34 MB (34,000,000 bytes)
+
+Jika < 1 MB, download gagal!
+
+
+TEST RUN
+======================================================================
+
+Setelah file ada, jalankan:
+
+python main.py
+
+
+======================================================================

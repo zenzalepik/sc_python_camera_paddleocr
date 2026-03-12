@@ -961,14 +961,34 @@ class RealTimeDistanceDetector:
         return True
 
     def show_capture_preview(self):
-        """Tampilkan window preview untuk semua capture."""
+        """Tampilkan window preview untuk semua capture menggunakan tkinter."""
         if not self.preview_frames:
-            return
+            return False
 
-        # Create preview window
-        preview_title = f"📸 Capture Preview - {self.parking_session.session_id}"
+        import tkinter as tk
+        from PIL import Image, ImageTk
 
-        # Calculate grid layout
+        # Create tkinter window
+        root = tk.Tk()
+        root.title(f"Capture Preview - {self.parking_session.session_id}")
+        root.geometry("1000x700")
+        root.configure(bg='#2b2b2b')
+
+        # Title label
+        title_label = tk.Label(
+            root,
+            text=f"📸 Capture Preview - {self.parking_session.session_id}",
+            font=("Arial", 16, "bold"),
+            bg='#2b2b2b',
+            fg='white'
+        )
+        title_label.pack(pady=10)
+
+        # Create frame untuk thumbnails
+        thumb_frame = tk.Frame(root, bg='#2b2b2b')
+        thumb_frame.pack(pady=10)
+
+        # Display thumbnails
         fase_names = ["FASE 1: SIAGA", "FASE 2: TETAP", "FASE 3: LOOP", "FASE 4: TAP"]
         fase_data = [
             self.preview_frames['fase1'],
@@ -976,86 +996,114 @@ class RealTimeDistanceDetector:
             self.preview_frames['fase3'],
             self.preview_frames['fase4'],
         ]
-        fase_counts = [3, 5, 3, 3]
 
-        # Create a large canvas for preview
-        canvas_height = 800
-        canvas_width = 1200
-        canvas = np.zeros((canvas_height, canvas_width, 3), dtype=np.uint8)
-        canvas[:] = (40, 40, 40)  # Dark gray background
+        all_thumbs = []  # Keep reference
 
-        # Title
-        cv2.putText(canvas, preview_title, (20, 35),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
+        for row, (fase_name, frames) in enumerate(zip(fase_names, fase_data)):
+            # Fase label
+            fase_label = tk.Label(
+                thumb_frame,
+                text=fase_name,
+                font=("Arial", 10, "bold"),
+                bg='#2b2b2b',
+                fg='#00ff00',
+                anchor='w'
+            )
+            fase_label.grid(row=row, column=0, sticky='w', padx=10, pady=5)
 
-        y_offset = 60
-        thumb_width = 100
-        thumb_height = 75
-        spacing = 15
+            # Thumbnails
+            for col, frame_idx in enumerate(range(len(frames))):
+                if frame_idx < len(frames):
+                    # Convert OpenCV frame to PIL Image
+                    cv_frame = frames[frame_idx]
+                    rgb_frame = cv2.cvtColor(cv_frame, cv2.COLOR_BGR2RGB)
+                    pil_image = Image.fromarray(rgb_frame)
+                    
+                    # Resize to thumbnail
+                    pil_image = pil_image.resize((100, 75), Image.Resampling.LANCZOS)
+                    
+                    # Convert to PhotoImage
+                    photo = ImageTk.PhotoImage(pil_image)
+                    all_thumbs.append(photo)  # Keep reference
+                    
+                    # Create label dengan border
+                    thumb_label = tk.Label(thumb_frame, image=photo, bg='white')
+                    thumb_label.grid(row=row, column=col+1, padx=5, pady=5)
 
-        for fase_idx, (fase_name, frames, target_count) in enumerate(zip(fase_names, fase_data, fase_counts)):
-            # Fase title
-            cv2.putText(canvas, fase_name, (20, y_offset + 20),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 1)
+        # Frame untuk tombol
+        button_frame = tk.Frame(root, bg='#2b2b2b')
+        button_frame.pack(pady=20)
 
-            # Draw thumbnails
-            x_offset = 20
-            y_offset += 30
-
-            for i in range(target_count):
-                if i < len(frames):
-                    # Resize frame to thumbnail
-                    thumb = cv2.resize(frames[i], (thumb_width, thumb_height))
-
-                    # Draw thumbnail border
-                    border_color = (0, 255, 0) if i < len(frames) else (100, 100, 100)
-                    cv2.rectangle(canvas,
-                                 (x_offset, y_offset),
-                                 (x_offset + thumb_width, y_offset + thumb_height),
-                                 border_color, 2)
-
-                    # Place thumbnail
-                    canvas[y_offset:y_offset + thumb_height,
-                           x_offset:x_offset + thumb_width] = thumb
-                else:
-                    # Empty placeholder
-                    cv2.rectangle(canvas,
-                                 (x_offset, y_offset),
-                                 (x_offset + thumb_width, y_offset + thumb_height),
-                                 (80, 80, 80), -1)
-                    cv2.rectangle(canvas,
-                                 (x_offset, y_offset),
-                                 (x_offset + thumb_width, y_offset + thumb_height),
-                                 (100, 100, 100), 1)
-
-                x_offset += thumb_width + spacing
-
-            y_offset += thumb_height + 30
-
-        # Draw SELESAI button
-        button_w, button_h = 200, 50
-        button_x = (canvas_width - button_w) // 2
-        button_y = canvas_height - button_h - 30
-
-        cv2.rectangle(canvas, (button_x, button_y),
-                     (button_x + button_w, button_y + button_h),
-                     (0, 255, 0), -1)
-        cv2.rectangle(canvas, (button_x, button_y),
-                     (button_x + button_w, button_y + button_h),
-                     (255, 255, 255), 2)
-        cv2.putText(canvas, "SELESAI", (button_x + 45, button_y + 32),
-                   cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
-
-        # Show canvas
-        cv2.imshow(preview_title, canvas)
-
-        # Handle button click (simple: check if user presses Enter or clicks)
-        key = cv2.waitKey(1) & 0xFF
-        if key == 13:  # Enter key
+        # SELESAI button
+        def on_selesai():
             self.complete_parking_session()
-            return True
+            root.destroy()
 
-        return False
+        selesai_btn = tk.Button(
+            button_frame,
+            text="✅ SELESAI",
+            command=on_selesai,
+            font=("Arial", 12, "bold"),
+            bg='#00aa00',
+            fg='white',
+            padx=30,
+            pady=10,
+            cursor='hand2',
+            activebackground='#00cc00',
+            activeforeground='white'
+        )
+        selesai_btn.pack(side=tk.LEFT, padx=10)
+
+        # CLOSE button
+        def on_close():
+            root.destroy()
+
+        close_btn = tk.Button(
+            button_frame,
+            text="❌ CLOSE",
+            command=on_close,
+            font=("Arial", 12, "bold"),
+            bg='#aa0000',
+            fg='white',
+            padx=30,
+            pady=10,
+            cursor='hand2',
+            activebackground='#cc0000',
+            activeforeground='white'
+        )
+        close_btn.pack(side=tk.LEFT, padx=10)
+
+        # Info label
+        info_label = tk.Label(
+            root,
+            text="Press ENTER to SELESAI | ESC to CLOSE",
+            font=("Arial", 9),
+            bg='#2b2b2b',
+            fg='#888888'
+        )
+        info_label.pack(pady=5)
+
+        # Bind keyboard shortcuts
+        def on_enter_key(event):
+            if event.keysym == 'Return':
+                on_selesai()
+            elif event.keysym == 'Escape':
+                on_close()
+
+        root.bind('<Key>', on_enter_key)
+        root.focus_force()
+
+        # Center window
+        root.update_idletasks()
+        width = root.winfo_width()
+        height = root.winfo_height()
+        x = (root.winfo_screenwidth() // 2) - (width // 2)
+        y = (root.winfo_screenheight() // 2) - (height // 2)
+        root.geometry(f'{width}x{height}+{x}+{y}')
+
+        # Run tkinter main loop
+        root.mainloop()
+        return True
     
     def draw_detections(self, frame, result):
         """Draw detection pada frame dengan ID dan status."""

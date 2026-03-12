@@ -16,6 +16,7 @@ echo   - And more...
 echo.
 echo Controls:
 echo   Q - Quit
+echo   Y - Toggle YOLO (ON/OFF)
 echo   S - Save snapshot
 echo   + - Increase threshold
 echo   - - Decrease threshold

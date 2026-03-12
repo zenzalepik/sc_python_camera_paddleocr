@@ -72,12 +72,14 @@ Mode ini menyembunyikan semua elemen visual UI (bounding box, label, panel, lege
 - ❌ Tidak ada preview window
 - ✅ Terminal logs tetap aktif untuk debugging
 - ✅ Semua fungsi sistem tetap berjalan normal
+- ✅ **YOLO dapat di-toggle dengan tombol Y**
 
 **Gunakan CLEAN_UI mode untuk:**
 - Recording video bersih tanpa overlay
 - Integrasi dengan sistem lain
 - Debugging via terminal logs
 - Performance testing tanpa rendering overhead
+- **Menonaktifkan YOLO sementara untuk hemat CPU**
 
 ---
 
@@ -216,9 +218,51 @@ Perubahan < 10%       → TETAP (Hijau)
 | Tombol | Fungsi |
 |--------|--------|
 | `Q` | Quit/Keluar |
+| `Y` | **TOGGLE YOLO** - Turn ON/OFF YOLO detection (press Y again to re-enable) |
 | `S` | Save snapshot (screenshot) |
 | `+` / `=` | Increase confidence threshold |
 | `-` | Decrease confidence threshold |
+
+---
+
+## 🎮 YOLO Toggle Feature
+
+**Shortcut: Tekan tombol `Y`**
+
+Fitur untuk menyalakan/mematikan YOLO detection secara dinamis tanpa restart aplikasi.
+
+### **Cara Kerja:**
+
+```
+Press Y (1st time)  → ❌ YOLO OFF  → CPU usage turun, detection berhenti
+Press Y (2nd time)  → ✅ YOLO ON   → CPU usage normal, detection aktif
+Press Y (3rd time)  → ❌ YOLO OFF  → CPU usage turun, detection berhenti
+```
+
+### **Kapan Menggunakan:**
+
+| Situasi | YOLO Status | Alasan |
+|---------|-------------|--------|
+| **Idle/Tidak ada object** | OFF | Hemat CPU & RAM |
+| **Object mulai terdeteksi** | ON | Mulai tracking |
+| **Testing tanpa detection** | OFF | Hanya preview camera |
+| **Performance critical** | OFF | Prioritaskan FPS |
+
+### **Terminal Feedback:**
+
+```
+[✅ YOLO] Detection ACTIVE         ← YOLO ON
+[❌ YOLO] Detection DISABLED       ← YOLO OFF (press Y to enable)
+```
+
+### **Setting Default:**
+
+Edit `variables.py` untuk menentukan status YOLO saat startup:
+```python
+YOLO_ENABLED_DEFAULT = True   # YOLO ON saat start
+# atau
+YOLO_ENABLED_DEFAULT = False  # YOLO OFF saat start
+```
 
 ---
 

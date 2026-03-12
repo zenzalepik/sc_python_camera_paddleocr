@@ -16,14 +16,21 @@ CLEAN_UI = False
 # ============================================
 # Resolution - Lower = smoother, Higher = better quality
 # Recommended: 320x240 (smooth) or 640x480 (quality)
-CAMERA_WIDTH = 320
-CAMERA_HEIGHT = 240
+# CAMERA_WIDTH = 320
+# CAMERA_HEIGHT = 240
+CAMERA_WIDTH = 640
+CAMERA_HEIGHT = 480
 
 # YOLO Frame Skipping:
 # 0 = Detect every frame (most accurate, less smooth)
 # 1 = Skip 1 frame (balanced - RECOMMENDED)
 # 2 = Skip 2 frames (very smooth, less accurate)
 YOLO_SKIP_FRAMES = 0
+
+# YOLO Enabled by Default
+# True = YOLO running on startup
+# False = YOLO disabled on startup (use Toggle Y with Y key to enable)
+YOLO_ENABLED_DEFAULT = True
 
 # ============================================
 # YOLO Detection Settings

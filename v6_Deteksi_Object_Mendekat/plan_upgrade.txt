@@ -1,0 +1,27 @@
+[START SYSTEM]
+
+1. INIT
+   - Load kamera
+   - Aktifkan modul Motion Detection (OpenCV)
+   - YOLO status = OFF
+
+2. LOOP
+   - OpenCV memantau frame kamera
+   - Jika tidak ada gerakan → tetap idle
+   - Jika ada gerakan signifikan:
+       -> Trigger YOLO
+       -> Set OpenCV status = OFF
+       -> Set YOLO status = ON
+
+3. YOLO INFERENCE
+   - Jalankan YOLO untuk deteksi objek
+   - Simpan hasil (bounding box, class, confidence)
+   - Setelah selesai:
+       -> Set YOLO status = OFF
+       -> Set OpenCV status = ON
+
+4. RETURN TO LOOP
+   - Kembali ke langkah 2
+   - Sistem terus berulang
+
+[END SYSTEM]

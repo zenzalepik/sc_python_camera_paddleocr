@@ -24,6 +24,7 @@ from variables import (
     CAMERA_WIDTH,
     CAMERA_HEIGHT,
     YOLO_SKIP_FRAMES,
+    YOLO_ENABLED_DEFAULT,
     YOLO_CONFIDENCE_THRESHOLD,
     TARGET_CLASSES,
     MAX_HISTORY,
@@ -714,6 +715,9 @@ class RealTimeDistanceDetector:
         self.yolo_skip_frames = YOLO_SKIP_FRAMES
         self.current_frame_count = 0
         self.last_detections = None  # Cache hasil deteksi terakhir
+        
+        # YOLO Enable/Disable Toggle
+        self.yolo_enabled = YOLO_ENABLED_DEFAULT  # Track apakah YOLO sedang aktif
 
     def start(self):
         """Start video capture."""
@@ -1155,6 +1159,53 @@ class RealTimeDistanceDetector:
                 1
             )
 
+    def draw_yolo_off_indicator(self, frame):
+        """Draw YOLO OFF indicator on frame (small, static, bottom right)."""
+        # Text
+        yolo_text = "YOLO OFF"
+        
+        # Get frame dimensions
+        frame_height, frame_width = frame.shape[:2]
+        
+        # Get text size (smaller font)
+        (text_w, text_h), baseline = cv2.getTextSize(
+            yolo_text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2
+        )
+        
+        # Position: pojok kanan atas, di atas tombol
+        margin = 10
+        text_x = frame_width - text_w - margin - 100  # 100px untuk space tombol
+        text_y = margin + text_h + 100  # Di bawah margin atas
+        
+        # Background box (dark red, static)
+        cv2.rectangle(
+            frame,
+            (text_x - 8, text_y - text_h - 8),
+            (text_x + text_w + 8, text_y + 8),
+            (0, 0, 200),
+            -1
+        )
+        
+        # Border (white)
+        cv2.rectangle(
+            frame,
+            (text_x - 8, text_y - text_h - 8),
+            (text_x + text_w + 8, text_y + 8),
+            (255, 255, 255),
+            1
+        )
+        
+        # Text
+        cv2.putText(
+            frame,
+            yolo_text,
+            (text_x, text_y),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (255, 255, 255),
+            2
+        )
+
     def draw_info_panel(self, frame, result):
         """Draw info panel dengan FPS dan SIAGA status."""
         # CLEAN_UI mode: Skip all drawing, but keep terminal logs
@@ -1497,6 +1548,7 @@ class RealTimeDistanceDetector:
         print("  - FASE 4: Capture 3 frame saat tombol TAP CARD ditekan")
         print("\nControls:")
         print("  - Press 'q' to quit")
+        print("  - Press 'y' to TOGGLE YOLO (ON/OFF)")
         print("  - Press 'r' to RESET tracking dan SIAGA")
         print("  - Press 's' to save snapshot")
         print("  - Press 'l' to trigger LOOP DETECTOR (FASE 3)")
@@ -1505,6 +1557,13 @@ class RealTimeDistanceDetector:
         print("  - Press 'h' to show HELP/BANTUAN")
         print("  - Press '+' to increase confidence threshold")
         print("  - Press '-' to decrease confidence threshold")
+        print("="*70 + "\n")
+        
+        # Show YOLO status
+        if self.yolo_enabled:
+            print(f"[✅ YOLO] Detection ACTIVE")
+        else:
+            print(f"[❌ YOLO] Detection DISABLED - Press 'Y' to enable")
         print("="*70 + "\n")
 
         try:
@@ -1517,30 +1576,43 @@ class RealTimeDistanceDetector:
 
                 # OPTIMASI: Frame skipping untuk YOLO inference
                 self.current_frame_count += 1
-                
-                # Gunakan cached detection jika skip frame
-                if self.yolo_skip_frames > 0 and self.current_frame_count % (self.yolo_skip_frames + 1) != 0:
-                    # Gunakan hasil deteksi terakhir (cache)
-                    detections = self.last_detections if self.last_detections else []
+
+                # Check jika YOLO disabled
+                if not self.yolo_enabled:
+                    # YOLO OFF - gunakan empty detections
+                    detections = []
+                    result = {'tracked_object': None, 'status': 'yolo_off'}
                 else:
-                    # Run YOLO detection
-                    detections = self.detect_objects(frame)
-                    self.last_detections = detections  # Cache hasil deteksi
+                    # YOLO ON - run detection
+                    # Gunakan cached detection jika skip frame
+                    if self.yolo_skip_frames > 0 and self.current_frame_count % (self.yolo_skip_frames + 1) != 0:
+                        # Gunakan hasil deteksi terakhir (cache)
+                        detections = self.last_detections if self.last_detections else []
+                    else:
+                        # Run YOLO detection
+                        detections = self.detect_objects(frame)
+                        self.last_detections = detections  # Cache hasil deteksi
 
-                # Update tracker (pilih 1 object terbesar)
-                result = self.tracker.update(detections)
+                    # Update tracker (pilih 1 object terbesar)
+                    result = self.tracker.update(detections)
 
-                # Check SIAGA expire
-                self.tracker.check_siaga_expire(time.time())
+                # Check SIAGA expire (hanya jika YOLO on)
+                if self.yolo_enabled:
+                    self.tracker.check_siaga_expire(time.time())
 
-                # Handle parking session
-                self.handle_parking_session(result, frame)
+                # Handle parking session (hanya jika YOLO on)
+                if self.yolo_enabled:
+                    self.handle_parking_session(result, frame)
 
                 # Check if preview should be shown
                 if self.show_preview and self.preview_frames:
                     if self.show_capture_preview():
                         continue  # Preview sudah ditutup
                 else:
+                    # Draw YOLO OFF indicator jika YOLO disabled
+                    if not self.yolo_enabled:
+                        self.draw_yolo_off_indicator(frame)
+                    
                     # Draw detections (hanya jika tidak show preview)
                     self.draw_detections(frame, result)
 
@@ -1555,6 +1627,15 @@ class RealTimeDistanceDetector:
 
                 if key == ord('q'):
                     break
+                elif key == ord('y'):
+                    # TOGGLE YOLO - Tekan Y untuk on/off
+                    self.yolo_enabled = not self.yolo_enabled
+                    if self.yolo_enabled:
+                        print(f"\n[✅ YOLO ON] Detection enabled!")
+                    else:
+                        print(f"\n[❌ YOLO OFF] Detection disabled - Press Y again to enable")
+                    # Reset tracking saat toggle
+                    self.tracker.reset_tracking()
                 elif key == ord('r'):
                     # RESET tracking dan SIAGA
                     self.tracker.reset_tracking()

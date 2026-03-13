@@ -52,6 +52,16 @@ SIAGA_FRAME_THRESHOLD = 3
 SIAGA_HOLD_TIME = 3.0
 
 # ============================================
+# Stationary Detection Settings
+# ============================================
+# Object yang diam selama X detik akan dihilangkan bounding box-nya
+STATIONARY_TIMEOUT = 30.0  # 30 detik
+
+# Gerakan minimal (dalam pixel) untuk dianggap tidak diam
+# Jika gerakan < nilai ini pada sumbu X dan Y, object dianggap diam
+MOVEMENT_THRESHOLD = 10.0  # 10 pixel
+
+# ============================================
 # Parking System Settings
 # ============================================
 # Target capture frames per fase

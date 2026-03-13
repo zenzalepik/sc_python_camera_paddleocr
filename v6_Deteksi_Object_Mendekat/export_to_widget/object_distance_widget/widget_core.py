@@ -31,7 +31,9 @@ from .widget_variables import (
     FASE3_TARGET,
     FASE4_TARGET,
     WINDOW_SCALE,
-    SHOW_FPS
+    SHOW_FPS,
+    STATIONARY_TIMEOUT,
+    MOVEMENT_THRESHOLD,
 )
 
 
@@ -253,6 +255,13 @@ class ObjectDistanceTracker:
         self.persistence_time_object_bbox = None
         self.object_counter = 0
         self.last_session_vehicle_id = None
+        
+        # Stationary detection settings
+        self.stationary_timeout = 30.0  # 30 detik object diam maka bounding box hilang
+        self.movement_threshold = 10.0  # 10px gerakan minimal (kanan/kiri/atas/bawah)
+        self.last_center_position = None  # (x, y) center position terakhir
+        self.stationary_start_time = None  # Waktu mulai diam
+        self.is_stationary = False  # Status apakah object sedang diam
 
     def update(self, detections):
         current_time = time.time()
@@ -290,16 +299,36 @@ class ObjectDistanceTracker:
         self.tracked_object_bbox = largest_detection['bbox']
         self.tracked_object_area = current_area
         self.tracked_object_class = largest_detection.get('class_name', 'UNKNOWN')
+        
+        # Hitung center position saat ini
+        current_center = (
+            (largest_detection['bbox'][0] + largest_detection['bbox'][2]) / 2,
+            (largest_detection['bbox'][1] + largest_detection['bbox'][3]) / 2
+        )
+        
+        # Cek apakah object bergerak atau diam
+        self._check_stationary(current_center, current_time)
+        
         self.tracked_object_history.append({
             'area': current_area,
             'bbox': largest_detection['bbox'],
             'conf': largest_detection['confidence'],
-            'time': current_time
+            'time': current_time,
+            'center': current_center
         })
         if len(self.tracked_object_history) > self.max_history:
             self.tracked_object_history = self.tracked_object_history[-self.max_history:]
+        
         status = self._analyze_trend()
         self._update_siaga(status, current_time)
+        
+        # Jika object diam (stationary), kembalikan status None agar bounding box tidak tampil
+        if self.is_stationary:
+            return {
+                'tracked_object': None,
+                'status': 'stationary'
+            }
+        
         return {
             'tracked_object': {
                 'id': self.tracked_object_id,
@@ -314,6 +343,49 @@ class ObjectDistanceTracker:
         if self.siaga_active:
             if self.siaga_expire_time is None:
                 self.siaga_expire_time = current_time + self.siaga_hold_time
+
+    def _check_stationary(self, current_center, current_time):
+        """
+        Cek apakah object diam (stationary).
+        Object dianggap diam jika:
+        - Gerakan tidak melebihi movement_threshold (10px) ke kanan/kiri/atas/bawah
+        - Sudah diam selama stationary_timeout (30 detik)
+        
+        Jika object diam, bounding box akan dihilangkan.
+        """
+        if self.last_center_position is None:
+            # First detection, set initial position
+            self.last_center_position = current_center
+            self.stationary_start_time = current_time
+            self.is_stationary = False
+            return
+        
+        last_x, last_y = self.last_center_position
+        curr_x, curr_y = current_center
+        
+        # Hitung pergerakan (abs distance) pada sumbu X dan Y
+        delta_x = abs(curr_x - last_x)
+        delta_y = abs(curr_y - last_y)
+        
+        # Cek apakah ada gerakan signifikan (> 10px pada salah satu sumbu)
+        has_significant_movement = delta_x > self.movement_threshold or delta_y > self.movement_threshold
+        
+        if has_significant_movement:
+            # Object bergerak - reset timer stationary
+            self.is_stationary = False
+            self.stationary_start_time = current_time
+        else:
+            # Object tidak bergerak signifikan - cek sudah berapa lama
+            if self.stationary_start_time is None:
+                self.stationary_start_time = current_time
+            else:
+                elapsed_time = current_time - self.stationary_start_time
+                if elapsed_time >= self.stationary_timeout:
+                    # Object sudah diam selama 30 detik - hilangkan bounding box
+                    self.is_stationary = True
+        
+        # Update posisi terakhir
+        self.last_center_position = current_center
 
     def _is_different_object(self, detection):
         if self.tracked_object_bbox is None:
@@ -424,6 +496,11 @@ class ObjectDistanceTracker:
         self.last_siaga_area = 0
         self.siaga_persistence_active = False
         self.persistence_time_active = False
+        
+        # Reset stationary detection state
+        self.last_center_position = None
+        self.stationary_start_time = None
+        self.is_stationary = False
 
     def check_siaga_expire(self, current_time):
         if self.persistence_time_active and self.siaga_cleared_time is not None:
@@ -739,25 +816,35 @@ class ObjectDistanceWidget(tk.Frame):
         """Handle parking session state machine."""
         tracked_object = result.get('tracked_object') if result else None
         status = result.get('status', 'stable') if result else 'no_detection'
-        
+
         if self.parking_session.phase == ParkingPhase.PREVIEW_READY:
             if self.on_session_complete:
                 self.on_session_complete(self.parking_session)
             self.parking_session = ParkingSession()
             self.tracker.reset_tracking()
             return
+
+        # Jika object stationary tapi parking session sedang aktif, lanjutkan session
+        if status == 'stationary' and self.parking_session.is_active:
+            # Object diam, tapi session masih jalan - abaikan stationary untuk session
+            # Tetap capture frames jika diperlukan
+            phase = self.parking_session.phase
+            if phase == ParkingPhase.FASE2_TETAP and self.capture_manager.can_capture(phase):
+                self.capture_manager.capture(frame, phase)
+            self.parking_session.advance_phase()
+            return
         
         if not tracked_object:
             if self.parking_session.is_active:
                 self.parking_session.cancel_session()
             return
-        
+
         if self.tracker.siaga_active and not self.parking_session.is_active:
             self.parking_session.start_session(
                 self.tracker.tracked_object_id,
                 self.tracker.tracked_object_class
             )
-        
+
         if self.parking_session.is_active:
             phase = self.parking_session.phase
             if phase == ParkingPhase.FASE1_SIAGA:
@@ -766,7 +853,7 @@ class ObjectDistanceWidget(tk.Frame):
             elif phase == ParkingPhase.FASE2_TETAP:
                 if status == 'stable' and self.capture_manager.can_capture(phase):
                     self.capture_manager.capture(frame, phase)
-        
+
         self.parking_session.advance_phase()
     
     def _draw_detections(self, frame, result):

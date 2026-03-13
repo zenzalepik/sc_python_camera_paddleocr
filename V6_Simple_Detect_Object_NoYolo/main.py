@@ -10,7 +10,7 @@ Detection Mode:
 import cv2
 import numpy as np
 from variables import (
-    AUTO_RESET_ENABLED,
+    AUTO_RESET_ENABLED as INITIAL_AUTO_RESET_MODE,
     NO_MOTION_THRESHOLD,
     OBJECT_CONFIRM_THRESHOLD,
     OBJECT_LOST_THRESHOLD,
@@ -46,12 +46,12 @@ def main():
 
     # =========================================
     # INISIALISASI BACKGROUND REFERENCE
-    # (Hanya jika AUTO_RESET_ENABLED = False)
+    # (Hanya jika INITIAL_AUTO_RESET_MODE = False)
     # =========================================
     background_reference = None
     prev_frame = None
     
-    if not AUTO_RESET_ENABLED:
+    if not INITIAL_AUTO_RESET_MODE:
         # Mode static background reference - capture background awal
         print(f"\n=== CAPTURING BACKGROUND REFERENCE ===")
         print(f"Capturing {INIT_CAPTURE_COUNT} frames...")
@@ -96,7 +96,7 @@ def main():
         history=500,
         varThreshold=50,
         detectShadows=False
-    ) if AUTO_RESET_ENABLED else None
+    ) if INITIAL_AUTO_RESET_MODE else None
 
     # Preprocessing kernel untuk blur
     blur_kernel = (5, 5)
@@ -109,14 +109,14 @@ def main():
     # Background reset counter
     no_motion_frames = 0
 
-    # Auto reset state
-    auto_reset_state = AUTO_RESET_ENABLED
+    # Auto reset state - ini yang di-toggle dengan tombol 'o'
+    auto_reset_state = INITIAL_AUTO_RESET_MODE
 
     print("Press 'q' to quit")
     print("Press 'r' to manually reset background")
     print("Press 'o' to toggle auto reset (ON/OFF)")
     print(f"Initial auto reset state: {'ON' if auto_reset_state else 'OFF'}")
-    if not AUTO_RESET_ENABLED:
+    if not INITIAL_AUTO_RESET_MODE:
         print(f"Thresholds - BG: {BG_DIFF_THRESHOLD}, Frame: {FRAME_DIFF_THRESHOLD}")
     print(f"Auto reset logic: Reset if NO object for {NO_MOTION_THRESHOLD} frames")
 
@@ -141,9 +141,9 @@ def main():
         blurred = cv2.GaussianBlur(gray, blur_kernel, 0)
 
         # =========================================
-        # DETEKSI OBJEK - Mode tergantung AUTO_RESET_ENABLED
+        # DETEKSI OBJEK - Mode tergantung auto_reset_state
         # =========================================
-        if AUTO_RESET_ENABLED:
+        if auto_reset_state:
             # Mode MOG2 Background Subtractor (adaptive)
             fg_mask = bg_subtractor.apply(blurred)
             # Morphological operations untuk membersihkan noise
@@ -217,7 +217,7 @@ def main():
                 # Cek apakah sudah mencapai threshold
                 if no_motion_frames >= NO_MOTION_THRESHOLD:
                     # RESET!
-                    if AUTO_RESET_ENABLED:
+                    if auto_reset_state:
                         # Mode MOG2: Reset background subtractor
                         bg_subtractor = cv2.createBackgroundSubtractorMOG2(
                             history=500,
@@ -304,8 +304,8 @@ def main():
                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, reset_color, 2)
 
         # Tampilkan mode deteksi
-        mode_text = "MODE: MOG2 (Adaptive)" if AUTO_RESET_ENABLED else "MODE: Static BG"
-        mode_color = (255, 255, 0) if AUTO_RESET_ENABLED else (255, 128, 0)  # Cyan / Orange
+        mode_text = "MODE: MOG2 (Adaptive)" if auto_reset_state else "MODE: Static BG"
+        mode_color = (255, 255, 0) if auto_reset_state else (255, 128, 0)  # Cyan / Orange
         cv2.putText(frame, mode_text, (10, 100),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, mode_color, 2)
 
@@ -353,7 +353,42 @@ def main():
         # Toggle auto reset dengan 'o'
         if key == ord('o'):
             auto_reset_state = not auto_reset_state
-            print(f"Auto reset: {'ON' if auto_reset_state else 'OFF'}")
+            
+            # Jika beralih ke mode Static BG, perlu capture background baru
+            if not auto_reset_state:
+                print("\n=== SWITCHING TO STATIC BG MODE ===")
+                print(f"Capturing {INIT_CAPTURE_COUNT} frames for background reference...")
+                print("Please ensure NO objects in the scene!\n")
+                
+                init_frames = []
+                for i in range(INIT_CAPTURE_COUNT):
+                    ret, frame = cap.read()
+                    if not ret:
+                        print("Error: Cannot read frame")
+                        continue
+                    
+                    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                    gray_blurred = cv2.GaussianBlur(gray, BLUR_KERNEL_SIZE, 0)
+                    init_frames.append(gray_blurred)
+                    
+                    cv2.putText(frame, f"Capturing frame {i+1}/{INIT_CAPTURE_COUNT}",
+                               (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+                    cv2.imshow('ROI Object Detection', frame)
+                    cv2.waitKey(300)
+                
+                background_reference = init_frames[-1].copy()
+                print("Background reference captured! Mode: STATIC BG\n")
+            else:
+                # Beralih ke mode MOG2
+                print("\n=== SWITCHING TO MOG2 MODE ===")
+                bg_subtractor = cv2.createBackgroundSubtractorMOG2(
+                    history=500,
+                    varThreshold=50,
+                    detectShadows=False
+                )
+                print("MOG2 initialized! Mode: AUTO RESET\n")
+            
+            print(f"Auto reset: {'ON (MOG2)' if auto_reset_state else 'OFF (Static BG)'}")
 
     # Cleanup
     cap.release()

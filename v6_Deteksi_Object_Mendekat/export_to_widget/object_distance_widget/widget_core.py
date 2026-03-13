@@ -256,9 +256,9 @@ class ObjectDistanceTracker:
         self.object_counter = 0
         self.last_session_vehicle_id = None
         
-        # Stationary detection settings
-        self.stationary_timeout = 30.0  # 30 detik object diam maka bounding box hilang
-        self.movement_threshold = 10.0  # 10px gerakan minimal (kanan/kiri/atas/bawah)
+        # Stationary detection settings (dari config)
+        self.stationary_timeout = STATIONARY_TIMEOUT  # 30 detik object diam maka bounding box hilang
+        self.movement_threshold = MOVEMENT_THRESHOLD  # 10px gerakan minimal (kanan/kiri/atas/bawah)
         self.last_center_position = None  # (x, y) center position terakhir
         self.stationary_start_time = None  # Waktu mulai diam
         self.is_stationary = False  # Status apakah object sedang diam

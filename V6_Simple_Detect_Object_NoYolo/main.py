@@ -209,11 +209,14 @@ def main():
         # === DETEKSI OBJECT (gambar bounding box hijau) ===
         object_in_roi = False
         detected_contours = []
-        has_green_box = False  # Apakah ada bounding box hijau?
-
+        
         # Minimum dimensions for bounding box to be displayed
         MIN_BOX_WIDTH = 120
         MIN_BOX_HEIGHT = 120
+        
+        # Track object untuk auto reset (semua contour yang lolos MIN_CONTOUR_AREA)
+        has_detected_object = False  # Ada object terdeteksi (untuk auto reset)
+        has_green_box = False  # Ada bounding box hijau yang ditampilkan (untuk visual)
 
         for contour in contours:
             # Filter contour kecil
@@ -222,30 +225,33 @@ def main():
 
             # Ambil bounding box
             x, y, w, h = cv2.boundingRect(contour)
-
-            # Filter: hanya tampilkan jika lebar DAN tinggi >= 120
-            if w < MIN_BOX_WIDTH or h < MIN_BOX_HEIGHT:
-                continue
-
-            detected_contours.append((x, y, w, h))
-
-            # Gambar bounding box objek (hijau)
-            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-            has_green_box = True  # Ada object terdeteksi (bounding box hijau)
+            
+            # Object terdeteksi (untuk auto reset logic) - semua contour yang lolos threshold
+            has_detected_object = True
 
             # Cek apakah bounding box bersinggungan dengan ROI
             # Dengan minimal overlap percentage
             if is_intersecting(x, y, w, h, roi_x, roi_y, roi_width, roi_height, MIN_ROI_OVERLAP):
                 object_in_roi = True
 
+            # Filter visual: hanya tampilkan bounding box jika lebar DAN tinggi >= 120
+            if w < MIN_BOX_WIDTH or h < MIN_BOX_HEIGHT:
+                continue
+
+            detected_contours.append((x, y, w, h))
+
+            # Gambar bounding box objek (hijau) - hanya yang besar enough
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            has_green_box = True  # Ada bounding box hijau yang ditampilkan
+
         # === AUTO RESET LOGIC (SEDERHANA) ===
         # Jika AUTO_RESET_ENABLED = True:
-        #   - Cek apakah ada bounding box hijau (has_green_box)
+        #   - Cek apakah ada object terdeteksi (has_detected_object)
         #   - Jika TIDAK ADA selama NO_MOTION_THRESHOLD → RESET
         #     - Capture background baru
         #     - Jadikan base reference baru
         if auto_reset_state:
-            if not has_green_box:
+            if not has_detected_object:
                 # Tidak ada object → increment counter
                 no_motion_frames += 1
 
@@ -260,7 +266,7 @@ def main():
                     object_present = False
                     print(f"[AUTO RESET] Background base updated - frame {frame_count}")
             else:
-                # Ada object (bounding box hijau) → reset counter
+                # Ada object terdeteksi → reset counter
                 no_motion_frames = 0
         else:
             # Auto reset OFF → counter tidak jalan
@@ -270,9 +276,9 @@ def main():
         # Logic sederhana:
         # - Jika object_in_roi = True → indikator berkedip
         # - Jika object_in_roi = False → indikator mati (tidak berkedip)
-        
-        # Reset semua counter jika tidak ada object hijau terdeteksi sama sekali
-        if not has_green_box:
+
+        # Reset semua counter jika tidak ada object terdeteksi sama sekali
+        if not has_detected_object:
             # Tidak ada object sama sekali → matikan indikator
             object_detected_frames = 0
             object_lost_frames = 0
@@ -293,7 +299,7 @@ def main():
                 if frame_count % BLINK_INTERVAL == 0:
                     blink_state = not blink_state
         else:
-            # Ada object hijau, tapi TIDAK di ROI
+            # Ada object terdeteksi, tapi TIDAK di ROI
             object_detected_frames = 0
             object_lost_frames += 1
 
@@ -342,7 +348,12 @@ def main():
         debug_text2 = f"No Object: {no_motion_frames}/{NO_MOTION_THRESHOLD}"
         cv2.putText(frame, debug_text2, (10, height - 60),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
-        
+
+        # Debug: object detection status
+        debug_text4 = f"Obj Detect: {'YES' if has_detected_object else 'NO'} | Green Box: {'YES' if has_green_box else 'NO'}"
+        cv2.putText(frame, debug_text4, (10, height - 120),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (150, 255, 150), 1)
+
         # Debug: contour count dan total area
         debug_text3 = f"Contours: {len(contours)} | Mask: {cv2.countNonZero(fg_mask)}px"
         cv2.putText(frame, debug_text3, (10, height - 30),

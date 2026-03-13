@@ -676,9 +676,9 @@ class RealTimeDistanceDetector:
         # Use variables.py setting if not specified
         self.confidence_threshold = confidence_threshold if confidence_threshold is not None else YOLO_CONFIDENCE_THRESHOLD
 
-        # Load YOLO model
+        # Load YOLO model dengan indikator download
         print("Loading YOLO model...")
-        self.model = YOLO('yolov8n.pt')
+        self.model = self._load_yolo_model()
         print("[OK] YOLO model loaded!")
 
         # Target classes untuk tracking (from variables.py)
@@ -715,9 +715,78 @@ class RealTimeDistanceDetector:
         self.yolo_skip_frames = YOLO_SKIP_FRAMES
         self.current_frame_count = 0
         self.last_detections = None  # Cache hasil deteksi terakhir
-        
+
         # YOLO Enable/Disable Toggle
         self.yolo_enabled = YOLO_ENABLED_DEFAULT  # Track apakah YOLO sedang aktif
+    
+    def _load_yolo_model(self):
+        """Load YOLO model dengan indikator download di layar."""
+        import tkinter as tk
+        from PIL import Image, ImageTk
+        
+        # Buat window sementara untuk menampilkan progress download
+        download_window = tk.Tk()
+        download_window.title("Loading YOLO Model")
+        download_window.geometry("500x200")
+        download_window.configure(bg='#1a1a1a')
+        download_window.resizable(False, False)
+        download_window.attributes('-topmost', True)  # Always on top
+        
+        # Center window
+        download_window.update_idletasks()
+        x = (download_window.winfo_screenwidth() // 2) - (250)
+        y = (download_window.winfo_screenheight() // 2) - (100)
+        download_window.geometry(f"500x200+{x}+{y}")
+        
+        # Label utama
+        main_label = tk.Label(
+            download_window,
+            text="⏳ Sedang mendownload YOLO...\nPlease wait...",
+            font=("Arial", 16, "bold"),
+            bg='#1a1a1a',
+            fg='#00ff00',
+            justify=tk.CENTER
+        )
+        main_label.pack(pady=30)
+        
+        # Progress label
+        progress_label = tk.Label(
+            download_window,
+            text="📥 Loading model from Ultralytics...",
+            font=("Arial", 11),
+            bg='#1a1a1a',
+            fg='#888888'
+        )
+        progress_label.pack(pady=10)
+        
+        # Info label
+        info_label = tk.Label(
+            download_window,
+            text="This may take a while if this is the first time running.",
+            font=("Arial", 9),
+            bg='#1a1a1a',
+            fg='#666666'
+        )
+        info_label.pack(pady=5)
+        
+        # Update window sebelum load model
+        download_window.update()
+        
+        try:
+            # Load YOLO model (ini akan mendownload jika belum ada)
+            print("[INFO] Downloading/loading YOLO model...")
+            model = YOLO('yolov8n.pt')
+            
+            # Tutup window setelah berhasil load
+            download_window.destroy()
+            download_window.update()
+            
+            return model
+            
+        except Exception as e:
+            download_window.destroy()
+            print(f"[ERROR] Failed to load YOLO model: {e}")
+            raise
 
     def start(self):
         """Start video capture."""

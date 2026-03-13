@@ -139,22 +139,17 @@ def main():
 
     # Background reset - untuk handle kondisi kosong
     no_motion_frames = 0
-    background_reset = False
     
-    # Cooldown setelah reset (untuk mencegah false detection)
-    reset_cooldown_frames = 0
-    RESET_COOLDOWN = 30  # Frame cooldown setelah reset (~1 detik)
-
     # Frame sebelumnya untuk frame differencing
     prev_frame = None
-    
+
+    # Auto reset state (bisa di-toggle)
+    auto_reset_state = AUTO_RESET_ENABLED  # Initial state dari variables.py
+
     # Mask buffers (untuk preview)
     fg_mask_bg = None
     fg_mask_diff = None
     fg_mask = None
-
-    # Auto reset state (bisa di-toggle)
-    auto_reset_state = AUTO_RESET_ENABLED  # Initial state dari variables.py
 
     # Storage untuk init frames (untuk preview dengan Ctrl+Shift+I)
     init_frames_storage = None
@@ -167,6 +162,7 @@ def main():
     print("Press 'p' to show initialization preview")
     print(f"Initial auto reset state: {'ON' if auto_reset_state else 'OFF'}")
     print(f"Thresholds - BG: {BG_DIFF_THRESHOLD}, Frame: {FRAME_DIFF_THRESHOLD}")
+    print(f"Auto reset logic: Reset if NO green box for {NO_MOTION_THRESHOLD} frames")
 
     # 2. LOOP
     while True:
@@ -210,11 +206,10 @@ def main():
         # Cari contour untuk mendapatkan bounding box objek
         contours, _ = cv2.findContours(fg_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-        # 3. CHECK ROI
+        # === DETEKSI OBJECT (gambar bounding box hijau) ===
         object_in_roi = False
         detected_contours = []
-        has_motion = False
-        has_motion_in_roi = False  # Track motion specifically in ROI
+        has_green_box = False  # Apakah ada bounding box hijau?
 
         for contour in contours:
             # Filter contour kecil
@@ -227,49 +222,40 @@ def main():
 
             # Gambar bounding box objek (hijau)
             cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            has_green_box = True  # Ada object terdeteksi (bounding box hijau)
 
             # Cek apakah bounding box bersinggungan dengan ROI
             # Dengan minimal overlap percentage
             if is_intersecting(x, y, w, h, roi_x, roi_y, roi_width, roi_height, MIN_ROI_OVERLAP):
                 object_in_roi = True
-                has_motion_in_roi = True  # Motion in ROI
-            
-            # Any valid contour counts as motion (for background reset logic)
-            has_motion = True
 
-        # === BACKGROUND RESET LOGIC ===
-        # Auto reset: jika tidak ada motion DI ROI cukup lama, update background
-        # Object yang diam akan jadi bagian dari background
-        
-        # Debug: print motion info every 100 frames
-        if frame_count % 100 == 0:
-            print(f"[Frame {frame_count}] Contours: {len(contours)} | Has motion: {has_motion} | In ROI: {has_motion_in_roi} | No motion frames: {no_motion_frames}")
-        
-        # Use has_motion_in_roi for auto reset - ignore motion outside ROI
-        if not has_motion_in_roi:
-            no_motion_frames += 1
-            # Auto reset background jika tidak ada gerakan cukup lama
-            if auto_reset_state and no_motion_frames >= NO_MOTION_THRESHOLD:
-                # Re-capture background reference dengan kondisi saat ini
-                # Object yang diam sekarang jadi bagian dari background
-                background_reference = blurred.copy()
+        # === AUTO RESET LOGIC (SEDERHANA) ===
+        # Jika AUTO_RESET_ENABLED = True:
+        #   - Cek apakah ada bounding box hijau (has_green_box)
+        #   - Jika TIDAK ADA selama NO_MOTION_THRESHOLD → RESET
+        #     - Capture background baru
+        #     - Jadikan base reference baru
+        if auto_reset_state:
+            if not has_green_box:
+                # Tidak ada object → increment counter
+                no_motion_frames += 1
+                
+                # Cek apakah sudah mencapai threshold
+                if no_motion_frames >= NO_MOTION_THRESHOLD:
+                    # RESET! Capture background baru sebagai base
+                    background_reference = blurred.copy()
+                    no_motion_frames = 0
+                    print(f"[AUTO RESET] Background base updated - frame {frame_count}")
+            else:
+                # Ada object (bounding box hijau) → reset counter
                 no_motion_frames = 0
-                background_reset = True
-                reset_cooldown_frames = RESET_COOLDOWN  # Activate cooldown
-                print(f"Background reference updated - frame {frame_count} (scene stabil)")
         else:
+            # Auto reset OFF → counter tidak jalan
             no_motion_frames = 0
-            background_reset = False
-        
-        # Decrement cooldown counter
-        if reset_cooldown_frames > 0:
-            reset_cooldown_frames -= 1
-            # Selama cooldown, skip deteksi untuk mencegah false positive
-            if reset_cooldown_frames > 0:
-                has_motion = False
-                object_in_roi = False
         
         # === STATE MANAGEMENT untuk object diam ===
+        # Logic: jika object_in_roi = True, kotak biru berkedip
+        # Jika object_in_roi = False, counter object_lost increment
         if object_in_roi:
             object_detected_frames += 1
             object_lost_frames = 0
@@ -288,13 +274,6 @@ def main():
 
             # Object masih dianggap ada selama grace period
             if object_lost_frames >= OBJECT_LOST_THRESHOLD:
-                object_present = False
-                indicator_on = False
-                blink_state = False
-            
-            # Jika auto reset aktif dan object hilang, reset counter lebih cepat
-            # Karena object mungkin sudah jadi background
-            if auto_reset_state and background_reset and object_lost_frames >= 10:
                 object_present = False
                 indicator_on = False
                 blink_state = False
@@ -332,23 +311,17 @@ def main():
 
         # Tampilkan counter debug (opsional)
         debug_text = f"Detected: {object_detected_frames} | Lost: {object_lost_frames}"
-        cv2.putText(frame, debug_text, (10, height - 120),
+        cv2.putText(frame, debug_text, (10, height - 90),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
 
-        debug_text2 = f"No Motion: {no_motion_frames}/{NO_MOTION_THRESHOLD}"
-        cv2.putText(frame, debug_text2, (10, height - 90),
+        debug_text2 = f"No Object: {no_motion_frames}/{NO_MOTION_THRESHOLD}"
+        cv2.putText(frame, debug_text2, (10, height - 60),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
         
         # Debug: contour count dan total area
         debug_text3 = f"Contours: {len(contours)} | Mask: {cv2.countNonZero(fg_mask)}px"
-        cv2.putText(frame, debug_text3, (10, height - 60),
+        cv2.putText(frame, debug_text3, (10, height - 30),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
-        
-        # Debug: motion in ROI
-        motion_status = "MOTION IN ROI" if has_motion_in_roi else "NO MOTION IN ROI"
-        motion_color = (0, 255, 255) if has_motion_in_roi else (200, 200, 200)
-        cv2.putText(frame, motion_status, (10, height - 30),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, motion_color, 2)
 
         # Tampilkan frame
         cv2.imshow('ROI Object Detection', frame)

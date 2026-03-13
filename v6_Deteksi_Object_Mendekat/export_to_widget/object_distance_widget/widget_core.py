@@ -515,12 +515,34 @@ class ObjectDistanceWidget(tk.Frame):
         # Video label (untuk menampilkan frame camera)
         self.video_label = tk.Label(self, bg='#000000')
         self.video_label.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        # Download overlay label (untuk menampilkan progress download YOLO)
+        self.download_overlay = tk.Frame(self.video_label, bg='#000000')
+        self.download_label = tk.Label(
+            self.download_overlay,
+            text="⏳ Sedang mendownload YOLO...\nPlease wait...",
+            font=("Arial", 16, "bold"),
+            bg='#000000',
+            fg='#00ff00',
+            justify=tk.CENTER
+        )
+        self.download_label.pack(expand=True)
         
+        # Progress bar untuk download
+        self.download_progress = tk.Label(
+            self.download_overlay,
+            text="📥 Initializing model...",
+            font=("Arial", 10),
+            bg='#000000',
+            fg='#888888'
+        )
+        self.download_progress.pack(pady=10)
+
         # Status frame (opsional, bisa di-hide dengan CLEAN_UI)
         if not CLEAN_UI:
             self.status_frame = tk.Frame(self, bg='#1a1a1a', height=30)
             self.status_frame.pack(fill=tk.X, padx=5, pady=2)
-            
+
             self.status_label = tk.Label(
                 self.status_frame,
                 text="Ready",
@@ -529,7 +551,7 @@ class ObjectDistanceWidget(tk.Frame):
                 fg='#00ff00'
             )
             self.status_label.pack(side=tk.LEFT, padx=10)
-            
+
             self.fps_label = tk.Label(
                 self.status_frame,
                 text="FPS: 0.0",
@@ -541,9 +563,18 @@ class ObjectDistanceWidget(tk.Frame):
     
     def _initialize_detector(self):
         """Initialize YOLO model and tracker."""
-        # Load YOLO model
+        # Tampilkan download overlay
+        self._show_download_overlay(True)
+        self._update_download_status("📥 Loading YOLO model...")
+        
+        # Load YOLO model (ini akan mendownload jika belum ada)
+        print("[INFO] Loading YOLO model (this may take a while if downloading)...")
         self.model = YOLO('yolov8n.pt')
         
+        # Sembunyikan download overlay setelah model berhasil dimuat
+        self._show_download_overlay(False)
+        self._update_status("Model loaded", '#00ff00')
+
         # Initialize tracker
         self.tracker = ObjectDistanceTracker(
             max_history=MAX_HISTORY,
@@ -551,10 +582,30 @@ class ObjectDistanceWidget(tk.Frame):
             siaga_hold_time=SIAGA_HOLD_TIME,
             target_classes=TARGET_CLASSES
         )
-        
+
         # Parking session
         self.parking_session = ParkingSession()
         self.capture_manager = CaptureManager(self.parking_session)
+        
+        print("[OK] Detector initialized")
+    
+    def _show_download_overlay(self, show):
+        """Show or hide download overlay."""
+        if show:
+            self.download_overlay.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
+            self.download_overlay.lift()  # Bring to front
+        else:
+            self.download_overlay.place_forget()
+    
+    def _update_download_status(self, text):
+        """Update download status text."""
+        self.download_progress.config(text=text)
+        self.download_overlay.update()
+    
+    def _update_status(self, text, color='#00ff00'):
+        """Update status label text."""
+        if not CLEAN_UI and hasattr(self, 'status_label'):
+            self.status_label.config(text=text, fg=color)
     
     def _open_camera(self):
         """Open camera capture."""

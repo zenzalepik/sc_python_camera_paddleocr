@@ -211,6 +211,10 @@ def main():
         detected_contours = []
         has_green_box = False  # Apakah ada bounding box hijau?
 
+        # Minimum dimensions for bounding box to be displayed
+        MIN_BOX_WIDTH = 120
+        MIN_BOX_HEIGHT = 120
+
         for contour in contours:
             # Filter contour kecil
             if cv2.contourArea(contour) < MIN_CONTOUR_AREA:
@@ -218,6 +222,11 @@ def main():
 
             # Ambil bounding box
             x, y, w, h = cv2.boundingRect(contour)
+
+            # Filter: hanya tampilkan jika lebar DAN tinggi >= 120
+            if w < MIN_BOX_WIDTH or h < MIN_BOX_HEIGHT:
+                continue
+
             detected_contours.append((x, y, w, h))
 
             # Gambar bounding box objek (hijau)
@@ -239,12 +248,16 @@ def main():
             if not has_green_box:
                 # Tidak ada object → increment counter
                 no_motion_frames += 1
-                
+
                 # Cek apakah sudah mencapai threshold
                 if no_motion_frames >= NO_MOTION_THRESHOLD:
                     # RESET! Capture background baru sebagai base
                     background_reference = blurred.copy()
                     no_motion_frames = 0
+                    # Reset indikator saat auto-reset
+                    indicator_on = False
+                    blink_state = False
+                    object_present = False
                     print(f"[AUTO RESET] Background base updated - frame {frame_count}")
             else:
                 # Ada object (bounding box hijau) → reset counter
@@ -253,10 +266,21 @@ def main():
             # Auto reset OFF → counter tidak jalan
             no_motion_frames = 0
         
-        # === STATE MANAGEMENT untuk object diam ===
-        # Logic: jika object_in_roi = True, kotak biru berkedip
-        # Jika object_in_roi = False, counter object_lost increment
-        if object_in_roi:
+        # === STATE MANAGEMENT untuk ROI INDIKATOR ===
+        # Logic sederhana:
+        # - Jika object_in_roi = True → indikator berkedip
+        # - Jika object_in_roi = False → indikator mati (tidak berkedip)
+        
+        # Reset semua counter jika tidak ada object hijau terdeteksi sama sekali
+        if not has_green_box:
+            # Tidak ada object sama sekali → matikan indikator
+            object_detected_frames = 0
+            object_lost_frames = 0
+            object_present = False
+            indicator_on = False
+            blink_state = False
+        elif object_in_roi:
+            # Ada object di ROI
             object_detected_frames += 1
             object_lost_frames = 0
 
@@ -269,6 +293,7 @@ def main():
                 if frame_count % BLINK_INTERVAL == 0:
                     blink_state = not blink_state
         else:
+            # Ada object hijau, tapi TIDAK di ROI
             object_detected_frames = 0
             object_lost_frames += 1
 

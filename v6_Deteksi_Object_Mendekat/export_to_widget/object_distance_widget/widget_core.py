@@ -512,31 +512,62 @@ class ObjectDistanceWidget(tk.Frame):
         
     def _create_widgets(self):
         """Create widget UI components."""
+        # Main container untuk video (stretch sempurna)
+        self.video_container = tk.Frame(self, bg='#000000')
+        self.video_container.pack(fill=tk.BOTH, expand=True)
+        
         # Video label (untuk menampilkan frame camera)
-        self.video_label = tk.Label(self, bg='#000000')
-        self.video_label.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self.video_label = tk.Label(self.video_container, bg='#000000')
+        self.video_label.pack(fill=tk.BOTH, expand=True)
 
         # Download overlay label (untuk menampilkan progress download YOLO)
-        self.download_overlay = tk.Frame(self.video_label, bg='#000000')
+        self.download_overlay = tk.Frame(self.video_container, bg='#000000')
+        
+        # Container untuk konten overlay (agar centered)
+        overlay_content = tk.Frame(self.download_overlay, bg='#000000')
+        overlay_content.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
+        
+        # Icon download (besar)
+        download_icon = tk.Label(
+            overlay_content,
+            text="📥",
+            font=("Segoe UI Emoji", 48),
+            bg='#000000',
+            fg='#00ff00'
+        )
+        download_icon.pack(pady=(0, 20))
+        
+        # Main download text
         self.download_label = tk.Label(
-            self.download_overlay,
-            text="⏳ Sedang mendownload YOLO...\nPlease wait...",
-            font=("Arial", 16, "bold"),
+            overlay_content,
+            text="⏳ Sedang mendownload YOLO...",
+            font=("Arial", 18, "bold"),
             bg='#000000',
             fg='#00ff00',
             justify=tk.CENTER
         )
-        self.download_label.pack(expand=True)
+        self.download_label.pack(pady=(0, 10))
         
-        # Progress bar untuk download
-        self.download_progress = tk.Label(
-            self.download_overlay,
-            text="📥 Initializing model...",
-            font=("Arial", 10),
+        # Subtitle
+        download_subtitle = tk.Label(
+            overlay_content,
+            text="Please wait while the model is being downloaded",
+            font=("Arial", 11),
             bg='#000000',
-            fg='#888888'
+            fg='#aaaaaa',
+            justify=tk.CENTER
         )
-        self.download_progress.pack(pady=10)
+        download_subtitle.pack(pady=(0, 20))
+
+        # Progress text untuk download
+        self.download_progress = tk.Label(
+            overlay_content,
+            text="🔄 Initializing model...",
+            font=("Arial", 12),
+            bg='#000000',
+            fg='#00ffff'
+        )
+        self.download_progress.pack()
 
         # Status frame (opsional, bisa di-hide dengan CLEAN_UI)
         if not CLEAN_UI:
@@ -566,11 +597,28 @@ class ObjectDistanceWidget(tk.Frame):
         # Tampilkan download overlay
         self._show_download_overlay(True)
         self._update_download_status("📥 Loading YOLO model...")
-        
+        self.update()  # Force UI update
+
         # Load YOLO model (ini akan mendownload jika belum ada)
         print("[INFO] Loading YOLO model (this may take a while if downloading)...")
-        self.model = YOLO('yolov8n.pt')
         
+        try:
+            # Coba load model dengan timeout handling
+            import time
+            start_time = time.time()
+            
+            self.model = YOLO('yolov8n.pt')
+            
+            elapsed = time.time() - start_time
+            print(f"[OK] Model loaded in {elapsed:.2f}s")
+            
+        except Exception as e:
+            print(f"[ERROR] Failed to load YOLO model: {e}")
+            self._update_download_status(f"❌ Error: {str(e)}")
+            self.update()
+            time.sleep(2)
+            raise
+
         # Sembunyikan download overlay setelah model berhasil dimuat
         self._show_download_overlay(False)
         self._update_status("Model loaded", '#00ff00')
@@ -586,17 +634,18 @@ class ObjectDistanceWidget(tk.Frame):
         # Parking session
         self.parking_session = ParkingSession()
         self.capture_manager = CaptureManager(self.parking_session)
-        
+
         print("[OK] Detector initialized")
     
     def _show_download_overlay(self, show):
         """Show or hide download overlay."""
         if show:
-            self.download_overlay.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
+            # Overlay memenuhi seluruh video container
+            self.download_overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
             self.download_overlay.lift()  # Bring to front
         else:
             self.download_overlay.place_forget()
-    
+
     def _update_download_status(self, text):
         """Update download status text."""
         self.download_progress.config(text=text)
@@ -813,31 +862,37 @@ class ObjectDistanceWidget(tk.Frame):
         """Update video display."""
         if not self.cap or not self.cap.isOpened():
             return
-        
+
         ret, frame = self.cap.read()
         if not ret:
             return
-        
+
         # Process frame
         processed_frame = self._process_frame(frame)
-        
+
         # Convert to RGB for tkinter
         rgb_frame = cv2.cvtColor(processed_frame, cv2.COLOR_BGR2RGB)
-        
-        # Resize to fit widget
-        widget_width = self.winfo_width()
-        widget_height = self.winfo_height()
-        if widget_width > 1 and widget_height > 1:
-            rgb_frame = cv2.resize(rgb_frame, (widget_width, widget_height))
-        
+
+        # Resize to fit widget - gunakan video_container untuk ukuran yang akurat
+        try:
+            widget_width = self.video_container.winfo_width()
+            widget_height = self.video_container.winfo_height()
+            
+            # Pastikan ukuran valid
+            if widget_width > 1 and widget_height > 1:
+                rgb_frame = cv2.resize(rgb_frame, (widget_width, widget_height))
+        except:
+            # Fallback ke ukuran default jika winfo belum tersedia
+            pass
+
         # Convert to PhotoImage
         img = Image.fromarray(rgb_frame)
         photo = ImageTk.PhotoImage(image=img)
-        
+
         # Update label
         self.video_label.config(image=photo)
         self.video_label.image = photo  # Keep reference
-        
+
         # Schedule next update
         if self.running:
             self.after(1, self._update_video)

@@ -1,0 +1,14 @@
+# Requirements for Parent Application
+# Object Distance Detection Widget Demo
+
+# Core dependencies
+ultralytics>=8.0.0      # YOLO model for object detection
+opencv-python>=4.5.0    # Camera processing
+Pillow>=9.0.0           # Image processing for tkinter
+numpy>=1.20.0           # Numerical operations
+
+# Note: tkinter usually comes with Python installation
+# If missing, install with:
+# - Windows: pip install tk (or install Python with tkinter)
+# - Linux: sudo apt-get install python3-tk
+# - Mac: brew install python-tk

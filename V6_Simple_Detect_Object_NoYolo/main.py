@@ -6,6 +6,7 @@ Uses background reference image for stationary object detection
 
 import cv2
 import numpy as np
+import os
 from variables import (
     AUTO_RESET_ENABLED,
     NO_MOTION_THRESHOLD,
@@ -24,7 +25,15 @@ from variables import (
     INIT_SIMILARITY_THRESHOLD,
     INIT_SELECTION_METHOD,
     INIT_STRICT_MIN_VOTES,
+    BG_DIFF_THRESHOLD,
+    FRAME_DIFF_THRESHOLD,
+    MIN_ROI_OVERLAP,
 )
+
+# Load thresholds from environment variables (override variables.py)
+# Example: set BG_DIFF_THRESHOLD=50 && python main.py
+BG_DIFF_THRESHOLD = int(os.environ.get('BG_DIFF_THRESHOLD', BG_DIFF_THRESHOLD))
+FRAME_DIFF_THRESHOLD = int(os.environ.get('FRAME_DIFF_THRESHOLD', FRAME_DIFF_THRESHOLD))
 
 
 def main():
@@ -138,6 +147,11 @@ def main():
 
     # Frame sebelumnya untuk frame differencing
     prev_frame = None
+    
+    # Mask buffers (untuk preview)
+    fg_mask_bg = None
+    fg_mask_diff = None
+    fg_mask = None
 
     # Auto reset state (bisa di-toggle)
     auto_reset_state = AUTO_RESET_ENABLED  # Initial state dari variables.py
@@ -148,9 +162,11 @@ def main():
 
     print("Press 'q' to quit")
     print("Press 'r' to manually reset background reference")
-    print("Press 't' to toggle auto reset (ON/OFF)")
+    print("Press 'o' to toggle auto reset (ON/OFF)")
+    print("Press 't' to show threshold preview window")
     print("Press 'p' to show initialization preview")
     print(f"Initial auto reset state: {'ON' if auto_reset_state else 'OFF'}")
+    print(f"Thresholds - BG: {BG_DIFF_THRESHOLD}, Frame: {FRAME_DIFF_THRESHOLD}")
 
     # 2. LOOP
     while True:
@@ -170,12 +186,12 @@ def main():
         # =========================================
         # 1. Background Reference Differencing (utama untuk object diam)
         bg_diff = cv2.absdiff(background_reference, blurred)
-        _, fg_mask_bg = cv2.threshold(bg_diff, 25, 255, cv2.THRESH_BINARY)
+        _, fg_mask_bg = cv2.threshold(bg_diff, BG_DIFF_THRESHOLD, 255, cv2.THRESH_BINARY)
 
         # 2. Frame Differencing (untuk object bergerak)
         if prev_frame is not None:
             frame_diff = cv2.absdiff(prev_frame, blurred)
-            _, fg_mask_diff = cv2.threshold(frame_diff, 25, 255, cv2.THRESH_BINARY)
+            _, fg_mask_diff = cv2.threshold(frame_diff, FRAME_DIFF_THRESHOLD, 255, cv2.THRESH_BINARY)
         else:
             fg_mask_diff = np.zeros_like(fg_mask_bg)
 
@@ -198,13 +214,12 @@ def main():
         object_in_roi = False
         detected_contours = []
         has_motion = False
+        has_motion_in_roi = False  # Track motion specifically in ROI
 
         for contour in contours:
             # Filter contour kecil
             if cv2.contourArea(contour) < MIN_CONTOUR_AREA:
                 continue
-
-            has_motion = True
 
             # Ambil bounding box
             x, y, w, h = cv2.boundingRect(contour)
@@ -214,22 +229,34 @@ def main():
             cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
 
             # Cek apakah bounding box bersinggungan dengan ROI
-            if is_intersecting(x, y, w, h, roi_x, roi_y, roi_width, roi_height):
+            # Dengan minimal overlap percentage
+            if is_intersecting(x, y, w, h, roi_x, roi_y, roi_width, roi_height, MIN_ROI_OVERLAP):
                 object_in_roi = True
+                has_motion_in_roi = True  # Motion in ROI
+            
+            # Any valid contour counts as motion (for background reset logic)
+            has_motion = True
 
         # === BACKGROUND RESET LOGIC ===
-        # Reset hanya jika: tidak ada object di ROI DAN tidak ada motion cukup lama
-        # Ini lebih strict untuk mencegah false reset
-        if not has_motion and not object_in_roi and not object_present:
+        # Auto reset: jika tidak ada motion DI ROI cukup lama, update background
+        # Object yang diam akan jadi bagian dari background
+        
+        # Debug: print motion info every 100 frames
+        if frame_count % 100 == 0:
+            print(f"[Frame {frame_count}] Contours: {len(contours)} | Has motion: {has_motion} | In ROI: {has_motion_in_roi} | No motion frames: {no_motion_frames}")
+        
+        # Use has_motion_in_roi for auto reset - ignore motion outside ROI
+        if not has_motion_in_roi:
             no_motion_frames += 1
             # Auto reset background jika tidak ada gerakan cukup lama
             if auto_reset_state and no_motion_frames >= NO_MOTION_THRESHOLD:
-                # Re-capture background reference
+                # Re-capture background reference dengan kondisi saat ini
+                # Object yang diam sekarang jadi bagian dari background
                 background_reference = blurred.copy()
                 no_motion_frames = 0
                 background_reset = True
                 reset_cooldown_frames = RESET_COOLDOWN  # Activate cooldown
-                print("Background reference updated - scene kosong")
+                print(f"Background reference updated - frame {frame_count} (scene stabil)")
         else:
             no_motion_frames = 0
             background_reset = False
@@ -241,7 +268,7 @@ def main():
             if reset_cooldown_frames > 0:
                 has_motion = False
                 object_in_roi = False
-
+        
         # === STATE MANAGEMENT untuk object diam ===
         if object_in_roi:
             object_detected_frames += 1
@@ -264,7 +291,13 @@ def main():
                 object_present = False
                 indicator_on = False
                 blink_state = False
-            # else: tetap anggap object masih ada (handle object diam)
+            
+            # Jika auto reset aktif dan object hilang, reset counter lebih cepat
+            # Karena object mungkin sudah jadi background
+            if auto_reset_state and background_reset and object_lost_frames >= 10:
+                object_present = False
+                indicator_on = False
+                blink_state = False
 
         # 4. DISPLAY
         # Gambar ROI
@@ -299,12 +332,23 @@ def main():
 
         # Tampilkan counter debug (opsional)
         debug_text = f"Detected: {object_detected_frames} | Lost: {object_lost_frames}"
-        cv2.putText(frame, debug_text, (10, height - 40),
+        cv2.putText(frame, debug_text, (10, height - 120),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
 
         debug_text2 = f"No Motion: {no_motion_frames}/{NO_MOTION_THRESHOLD}"
-        cv2.putText(frame, debug_text2, (10, height - 10),
+        cv2.putText(frame, debug_text2, (10, height - 90),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
+        
+        # Debug: contour count dan total area
+        debug_text3 = f"Contours: {len(contours)} | Mask: {cv2.countNonZero(fg_mask)}px"
+        cv2.putText(frame, debug_text3, (10, height - 60),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
+        
+        # Debug: motion in ROI
+        motion_status = "MOTION IN ROI" if has_motion_in_roi else "NO MOTION IN ROI"
+        motion_color = (0, 255, 255) if has_motion_in_roi else (200, 200, 200)
+        cv2.putText(frame, motion_status, (10, height - 30),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, motion_color, 2)
 
         # Tampilkan frame
         cv2.imshow('ROI Object Detection', frame)
@@ -321,10 +365,22 @@ def main():
             no_motion_frames = 0
             print("Manual background reference reset")
 
-        # Toggle auto reset dengan 't'
-        if key == ord('t'):
+        # Toggle auto reset dengan 'o'
+        if key == ord('o'):
             auto_reset_state = not auto_reset_state
             print(f"Auto reset: {'ON' if auto_reset_state else 'OFF'}")
+
+        # Show threshold preview dengan 't'
+        if key == ord('t'):
+            show_threshold_preview(
+                blurred,
+                background_reference,
+                fg_mask_bg,
+                fg_mask_diff,
+                fg_mask,
+                BG_DIFF_THRESHOLD,
+                FRAME_DIFF_THRESHOLD
+            )
 
         # Show initialization preview dengan 'p'
         if key == ord('p'):
@@ -343,17 +399,34 @@ def main():
     print("Camera released and windows destroyed")
 
 
-def is_intersecting(obj_x, obj_y, obj_w, obj_h, roi_x, roi_y, roi_w, roi_h):
+def is_intersecting(obj_x, obj_y, obj_w, obj_h, roi_x, roi_y, roi_w, roi_h, min_overlap=0.0):
     """
-    Cek apakah bounding box objek bersinggungan dengan ROI
+    Cek apakah bounding box objek bersinggungan dengan ROI dengan minimal overlap.
+    
+    Args:
+        obj_x, obj_y, obj_w, obj_h: Object bounding box
+        roi_x, roi_y, roi_w, roi_h: ROI bounding box
+        min_overlap: Minimal overlap percentage (0.0 - 1.0)
+    
+    Returns:
+        True jika object overlap dengan ROI >= min_overlap
     """
-    # Cek overlap
-    if (obj_x < roi_x + roi_w and
-        obj_x + obj_w > roi_x and
-        obj_y < roi_y + roi_h and
-        obj_y + obj_h > roi_y):
-        return True
-    return False
+    # Hitung overlap area
+    overlap_x = max(0, min(obj_x + obj_w, roi_x + roi_w) - max(obj_x, roi_x))
+    overlap_y = max(0, min(obj_y + obj_h, roi_y + roi_h) - max(obj_y, roi_y))
+    overlap_area = overlap_x * overlap_y
+    
+    # Hitung area object
+    obj_area = obj_w * obj_h
+    
+    if obj_area == 0:
+        return False
+    
+    # Hitung overlap percentage
+    overlap_percentage = overlap_area / obj_area
+    
+    # Cek apakah overlap >= minimal yang disyaratkan
+    return overlap_percentage >= min_overlap
 
 
 def select_best_reference_frame(frames, method="average", threshold=0.85, min_votes=10):
@@ -511,8 +584,97 @@ def show_initialization_preview(init_frames_data, background_ref_original, blur_
 
     # Wait hingga user tekan key di preview window
     cv2.waitKey(0)
-    cv2.destroyWindow('Initialization Preview')
+    
+    try:
+        cv2.destroyWindow('Initialization Preview')
+    except:
+        pass
+    
     print("=== PREVIEW CLOSED ===\n")
+
+
+def show_threshold_preview(current_frame, bg_reference, mask_bg, mask_diff, mask_combined, bg_thresh, frame_thresh):
+    """
+    Tampilkan popup preview threshold processing:
+    1. Current frame (grayscale)
+    2. Background reference
+    3. BG difference mask
+    4. Frame difference mask
+    5. Combined mask
+    """
+    # Convert ke BGR untuk display
+    current_bgr = cv2.cvtColor(current_frame, cv2.COLOR_GRAY2BGR)
+    bg_bgr = cv2.cvtColor(bg_reference, cv2.COLOR_GRAY2BGR)
+    mask_bg_bgr = cv2.cvtColor(mask_bg, cv2.COLOR_GRAY2BGR)
+    mask_diff_bgr = cv2.cvtColor(mask_diff, cv2.COLOR_GRAY2BGR)
+    mask_combined_bgr = cv2.cvtColor(mask_combined, cv2.COLOR_GRAY2BGR)
+
+    # Resize untuk fit screen
+    target_height = 200
+    h, w = current_frame.shape
+    scale = target_height / h
+    new_size = (int(w * scale), int(h * scale))
+
+    current_resized = cv2.resize(current_bgr, new_size)
+    bg_resized = cv2.resize(bg_bgr, new_size)
+    mask_bg_resized = cv2.resize(mask_bg_bgr, new_size)
+    mask_diff_resized = cv2.resize(mask_diff_bgr, new_size)
+    mask_combined_resized = cv2.resize(mask_combined_bgr, new_size)
+
+    # Add labels
+    cv2.putText(current_resized, "CURRENT", (10, 30),
+               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+    cv2.putText(bg_resized, "BG REFERENCE", (10, 30),
+               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+    cv2.putText(mask_bg_resized, f"BG DIFF (>{bg_thresh})", (10, 30),
+               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+    cv2.putText(mask_diff_resized, f"FRAME DIFF (>{frame_thresh})", (10, 30),
+               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+    cv2.putText(mask_combined_resized, "COMBINED", (10, 30),
+               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+
+    # Stack horizontal
+    combined = np.hstack([
+        current_resized,
+        bg_resized,
+        mask_bg_resized,
+        mask_diff_resized,
+        mask_combined_resized
+    ])
+
+    # Tampilkan info
+    info_text = [
+        f"Resolution: {w}x{h}",
+        f"BG Threshold: {bg_thresh}",
+        f"Frame Threshold: {frame_thresh}",
+        f"Mask pixels: {cv2.countNonZero(mask_combined)}",
+        "",
+        "Close window or press any key to continue..."
+    ]
+
+    # Buat panel info
+    info_height = 180
+    info_panel = np.zeros((info_height, combined.shape[1], 3), dtype=np.uint8)
+    for i, text in enumerate(info_text):
+        color = (200, 200, 200) if text else (100, 100, 100)
+        cv2.putText(info_panel, text, (10, 35 + i * 35),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 1)
+
+    # Gabungkan
+    full_preview = np.vstack([combined, info_panel])
+
+    cv2.imshow('Threshold Preview', full_preview)
+    print("Threshold preview window opened. Press any key to close.")
+
+    # Wait hingga user tekan key di preview window
+    cv2.waitKey(0)
+    
+    try:
+        cv2.destroyWindow('Threshold Preview')
+    except:
+        pass
+    
+    print("=== THRESHOLD PREVIEW CLOSED ===\n")
 
 
 if __name__ == "__main__":

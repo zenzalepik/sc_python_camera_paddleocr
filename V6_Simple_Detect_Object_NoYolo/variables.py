@@ -47,6 +47,23 @@ OBJECT_LOST_THRESHOLD = 30
 # Minimum area contour untuk dianggap object
 MIN_CONTOUR_AREA = 800
 
+# Minimum overlap object dengan ROI (0.0 - 1.0)
+# 0.1 = 10% area object harus masuk ROI
+# 0.25 = 25% area object harus masuk ROI (default)
+# 0.5 = 50% area object harus masuk ROI
+# 1.0 = seluruh object harus masuk ROI
+MIN_ROI_OVERLAP = 0.25
+
+# Threshold untuk background differencing (0-255)
+# Lebih tinggi = kurang sensitif (lebih banyak noise diabaikan)
+# Rekomendasi: 30-50 untuk indoor, 50-80 untuk noisy camera
+# Bisa di-override via environment variable: BG_DIFF_THRESHOLD
+BG_DIFF_THRESHOLD = 40
+
+# Threshold untuk frame differencing (0-255)
+# Bisa di-override via environment variable: FRAME_DIFF_THRESHOLD
+FRAME_DIFF_THRESHOLD = 40
+
 # ============================================
 # ROI (REGION OF INTEREST)
 # ============================================

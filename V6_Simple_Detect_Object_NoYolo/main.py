@@ -732,8 +732,13 @@ def main():
 
         # Manual background reset dengan 'r'
         if key == ord('r'):
-            if AUTO_RESET_ENABLED:
+            if auto_reset_state:
                 bg_subtractor = cv2.createBackgroundSubtractorMOG2(
+                    history=500,
+                    varThreshold=50,
+                    detectShadows=False
+                )
+                preview_mog2 = cv2.createBackgroundSubtractorMOG2(
                     history=500,
                     varThreshold=50,
                     detectShadows=False
@@ -742,6 +747,8 @@ def main():
                 background_reference = blurred.copy()
             roi_empty_frames = 0
             last_log_second = 0
+            mog2_reset_counter = 0
+            mog2_learning_phase = False
             print("Manual background reset")
 
         # Toggle auto reset dengan 'o'

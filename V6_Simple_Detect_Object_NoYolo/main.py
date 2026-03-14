@@ -295,11 +295,40 @@ def main():
             object_moving = False
             movement_log_counter += 1
             
-            # Jika Canny detect sampai NO_MOTION_THRESHOLD → anggap object permanent
+            # Jika Canny detect sampai NO_MOTION_THRESHOLD → jalankan AUTO RESET
             if canny_roi_edge_counter >= NO_MOTION_THRESHOLD:
-                roi_occupied = True
-                # Reset counter karena sudah mencapai threshold
+                # Object diam terlalu lama → jalankan reset!
+                print(f"\n{'='*60}")
+                print(f"  🔄 [AUTO RESET] Object STATIONARY too long - frame {frame_count}")
+                print(f"  ⏱️  [AUTO RESET] Stationary time: {NO_MOTION_THRESHOLD/30:.1f} detik")
+                print(f"  📊 [AUTO RESET] Threshold: {NO_MOTION_THRESHOLD} frames")
+                print(f"{'='*60}\n")
+                
+                # Reset MOG2 background subtractor
+                if auto_reset_state:
+                    bg_subtractor = cv2.createBackgroundSubtractorMOG2(
+                        history=500,
+                        varThreshold=50,
+                        detectShadows=False
+                    )
+                    preview_mog2 = cv2.createBackgroundSubtractorMOG2(
+                        history=500,
+                        varThreshold=50,
+                        detectShadows=False
+                    )
+                else:
+                    # Mode Static: Update background reference
+                    background_reference = blurred.copy()
+                
+                # Reset semua counter
                 canny_roi_edge_counter = 0
+                roi_occupied = False
+                last_object_bbox_in_roi = None
+                object_stationary_counter = 0
+                movement_log_counter = 0
+                indicator_on = False
+                blink_state = False
+                object_present = False
         elif roi_occupied:
             # Tidak ada MOG2 dan tidak ada Canny edge → object pergi
             canny_roi_edge_counter = 0

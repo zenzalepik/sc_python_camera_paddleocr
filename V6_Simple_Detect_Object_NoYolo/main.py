@@ -440,7 +440,7 @@ def main():
         # === STATE MANAGEMENT untuk ROI INDIKATOR ===
         # LOGIC DIPISAHKAN:
         # 1. Kotak ROI berkedip → Berdasarkan object di ROI (MOG2 atau Canny)
-        # 2. Label "OBJECT IN ROI" → Berdasarkan MOG2 saja (object bergerak)
+        # 2. Label "OBJECT IN ROI" → Sama dengan logic kotak biru
         
         # --- LOGIC 1: Kotak ROI Berkedip ---
         if persistent_object_in_roi and roi_occupied:
@@ -464,14 +464,9 @@ def main():
             roi_box_blink = False  # Kotak tidak berkedip
             blink_state = False
         
-        # --- LOGIC 2: Label "OBJECT IN ROI" ---
-        # Label hanya muncul jika MOG2 detect (object bergerak di ROI)
-        if has_detected_object and object_in_roi:
-            # MOG2 detect object di ROI → tampilkan label
-            label_object_in_roi = True
-        else:
-            # MOG2 tidak detect (object diam atau keluar) → sembunyikan label
-            label_object_in_roi = False
+        # --- LOGIC 2: Label "OBJECT IN ROI" (SAMA dengan logic kotak biru) ---
+        # Label muncul jika kotak biru berkedip (object di ROI)
+        label_object_in_roi = roi_box_blink and object_present
 
         # 4. DISPLAY
         # Gambar ROI

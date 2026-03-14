@@ -91,6 +91,10 @@ def main():
     # Untuk efek berkedip
     blink_state = False
     frame_count = 0
+    
+    # Variabel terpisah untuk kotak dan label
+    roi_box_blink = False  # Kontrol kotak ROI berkedip
+    label_object_in_roi = False  # Kontrol label "OBJECT IN ROI"
 
     # Background subtractor (hanya untuk mode AUTO_RESET = True)
     # learningRate=0.01 = MOG2 belajar lebih lambat (object diam tidak cepat hilang)
@@ -326,9 +330,15 @@ def main():
                 last_object_bbox_in_roi = None
                 object_stationary_counter = 0
                 movement_log_counter = 0
+                
+                # Reset indikator SETELAH reset (kotak berhenti berkedip SETELAH reset)
                 indicator_on = False
                 blink_state = False
                 object_present = False
+            else:
+                # Canny counter belum mencapai threshold → ROI masih occupied, box tetap berkedip
+                roi_occupied = True
+                persistent_object_in_roi = True
         elif roi_occupied:
             # Tidak ada MOG2 dan tidak ada Canny edge → object pergi
             canny_roi_edge_counter = 0
@@ -340,6 +350,7 @@ def main():
             if object_stationary_counter > 60:
                 roi_occupied = False
                 last_object_bbox_in_roi = None
+                persistent_object_in_roi = False  # Object benar-benar keluar
         
         # Log movement changes (hanya jika di ROI)
         if roi_occupied:
@@ -427,42 +438,45 @@ def main():
             last_log_second = 0
 
         # === STATE MANAGEMENT untuk ROI INDIKATOR ===
-        # Gunakan persistent_object_in_roi untuk indikator yang lebih stabil
-        if not has_detected_object:
-            # Tidak ada object sama sekali → matikan indikator
-            object_detected_frames = 0
-            object_lost_frames = 0
-            object_present = False
-            indicator_on = False
-            blink_state = False
-        elif persistent_object_in_roi:
-            # Ada object di ROI (persistent tracking)
+        # LOGIC DIPISAHKAN:
+        # 1. Kotak ROI berkedip → Berdasarkan object di ROI (MOG2 atau Canny)
+        # 2. Label "OBJECT IN ROI" → Berdasarkan MOG2 saja (object bergerak)
+        
+        # --- LOGIC 1: Kotak ROI Berkedip ---
+        if persistent_object_in_roi and roi_occupied:
+            # Ada object di ROI (MOG2 atau Canny) → kotak berkedip
             object_detected_frames += 1
             object_lost_frames = 0
 
             # Konfirmasi object ada setelah beberapa frame berturut-turut
             if object_detected_frames >= OBJECT_CONFIRM_THRESHOLD:
                 object_present = True
-                indicator_on = True
-
+                roi_box_blink = True  # Kotak berkedip
+                
                 # Efek berkedip: toggle ON/OFF setiap beberapa frame
                 if frame_count % BLINK_INTERVAL == 0:
                     blink_state = not blink_state
         else:
-            # Ada object terdeteksi, tapi TIDAK di ROI
+            # Object TIDAK di ROI (keluar atau sudah reset) → kotak BERHENTI berkedip
             object_detected_frames = 0
-            object_lost_frames += 1
-
-            # Object masih dianggap ada selama grace period
-            if object_lost_frames >= OBJECT_LOST_THRESHOLD:
-                object_present = False
-                indicator_on = False
-                blink_state = False
+            object_lost_frames = 0
+            object_present = False
+            roi_box_blink = False  # Kotak tidak berkedip
+            blink_state = False
+        
+        # --- LOGIC 2: Label "OBJECT IN ROI" ---
+        # Label hanya muncul jika MOG2 detect (object bergerak di ROI)
+        if has_detected_object and object_in_roi:
+            # MOG2 detect object di ROI → tampilkan label
+            label_object_in_roi = True
+        else:
+            # MOG2 tidak detect (object diam atau keluar) → sembunyikan label
+            label_object_in_roi = False
 
         # 4. DISPLAY
         # Gambar ROI
-        if indicator_on and blink_state:
-            # Kotak biru berkedip
+        if roi_box_blink and blink_state:
+            # Kotak biru berkedip (object di ROI)
             roi_color = (255, 0, 0)  # Blue (BGR)
             roi_thickness = 3
         else:
@@ -474,10 +488,12 @@ def main():
                      roi_color, roi_thickness)
 
         # Tampilkan status indikator
-        if indicator_on:
+        if label_object_in_roi:
+            # Label "OBJECT IN ROI" (hanya saat MOG2 detect)
             status_text = "OBJECT IN ROI"
             status_color = (0, 255, 0)  # Green
         else:
+            # Label "NO OBJECT" (MOG2 tidak detect)
             status_text = "NO OBJECT"
             status_color = (0, 0, 255)  # Red
 

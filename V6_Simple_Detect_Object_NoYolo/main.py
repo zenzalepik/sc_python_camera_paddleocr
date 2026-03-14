@@ -132,6 +132,13 @@ def main():
     canny_min_edge_threshold = 50  # Minimum edge pixels untuk dianggap ada object
     canny_detecting = False  # Status apakah Canny sedang detect object
     
+    # Flag untuk ignore Canny setelah auto reset
+    ignore_canny_after_reset = False  # Ignore Canny sampai ada motion baru
+    
+    # MOG2 natural learning phase (setelah reset)
+    mog2_reset_counter = 0  # Counter untuk MOG2 learning
+    mog2_learning_phase = False  # Flag: MOG2 sedang belajar natural
+    
     # Object movement tracking
     object_moving = False  # Status apakah object sedang bergerak
     last_movement_time = time.time()  # Waktu terakhir object terdeteksi bergerak
@@ -284,6 +291,31 @@ def main():
         # Track movement status
         prev_object_moving = object_moving
         
+        # === TAMBAHAN: MOG2 Natural Learning Phase (seperti auto_reset) ===
+        # Setelah reset manual, MOG2 belajar natural dalam 3-5 detik
+        # SELAMA PHASE INI: Object TIDAK dianggap di ROI (kotak GRAY)
+        if mog2_learning_phase:
+            mog2_reset_counter += 1
+            # MOG2 learning phase = 100 frames (~3.3 detik)
+            if mog2_reset_counter >= 100:
+                mog2_learning_phase = False
+                # LEARNING COMPLETE - Reset penuh seperti auto_reset
+                # Object yang diam = background (tidak terdeteksi)
+                roi_occupied = False
+                persistent_object_in_roi = False
+                indicator_on = False
+                blink_state = False
+                object_present = False
+                roi_box_blink = False
+                label_object_in_roi = False
+                print(f"  ✅ [MOG2] Natural learning phase complete - MOG2 ready!")
+                print(f"  ✅ [MOG2] Full reset complete - waiting for NEW motion")
+            elif mog2_reset_counter % 20 == 0:
+                print(f"  🔄 [MOG2] Learning... {mog2_reset_counter}/100 frames ({mog2_reset_counter/30:.1f}s)")
+                # SELAMA LEARNING: Object tidak dianggap di ROI
+                roi_occupied = False
+                persistent_object_in_roi = False
+
         if current_object_bbox_in_roi is not None:
             # MOG2 detect object di ROI → object BERGERAK
             roi_occupied = True
@@ -292,8 +324,10 @@ def main():
             canny_detecting = False
             object_moving = True
             movement_log_counter = 0
-        elif has_canny_edge_in_roi and roi_occupied:
+            ignore_canny_after_reset = False  # Reset flag, boleh detect Canny lagi
+        elif has_canny_edge_in_roi and roi_occupied and not ignore_canny_after_reset:
             # MOG2 tidak detect, tapi Canny detect edge → object DIAM
+            # SKIP jika baru reset (ignore_canny_after_reset = True)
             canny_roi_edge_counter += 1
             canny_detecting = True
             object_moving = False
@@ -324,17 +358,30 @@ def main():
                     # Mode Static: Update background reference
                     background_reference = blurred.copy()
                 
-                # Reset semua counter
+                # Reset SEMUA counter dan status
                 canny_roi_edge_counter = 0
-                roi_occupied = False
+                roi_occupied = False  # ← ROI dianggap KOSONG setelah reset
                 last_object_bbox_in_roi = None
                 object_stationary_counter = 0
                 movement_log_counter = 0
-                
-                # Reset indikator SETELAH reset (kotak berhenti berkedip SETELAH reset)
+                persistent_object_in_roi = False  # ← Object TIDAK dianggap ada lagi
                 indicator_on = False
                 blink_state = False
                 object_present = False
+                roi_box_blink = False  # ← Kotak BERHENTI berkedip
+                label_object_in_roi = False  # ← Label "NO OBJECT"
+                
+                # Flag untuk ignore Canny setelah reset (sampai ada motion baru)
+                ignore_canny_after_reset = True
+                
+                # === TAMBAHAN: Reset MOG2 dengan learning rate CEPAT untuk natural reset ===
+                # Setelah re-create MOG2, biarkan MOG2 belajar natural seperti auto_reset
+                # MOG2 akan belajar object sebagai background dalam 3-5 detik
+                mog2_reset_counter = 0  # Counter untuk tracking MOG2 learning
+                mog2_learning_phase = True  # Flag: MOG2 sedang belajar
+                
+                print(f"  ✅ [RESET] ROI status cleared - waiting for new motion detection")
+                print(f"  🔄 [MOG2] Starting natural learning phase (3-5 detik)...")
             else:
                 # Canny counter belum mencapai threshold → ROI masih occupied, box tetap berkedip
                 roi_occupied = True
@@ -351,6 +398,7 @@ def main():
                 roi_occupied = False
                 last_object_bbox_in_roi = None
                 persistent_object_in_roi = False  # Object benar-benar keluar
+                ignore_canny_after_reset = False  # Reset flag
         
         # Log movement changes (hanya jika di ROI)
         if roi_occupied:

@@ -177,7 +177,7 @@ class ResponsiveApp:
 
                 # Handle keyboard
                 key = cv2.waitKey(10) & 0xFF
-                if key == ord('q') or key == 27:
+                if key == ord('q'):
                     break
                 elif key == ord('r'):
                     self.widget.reset_background()

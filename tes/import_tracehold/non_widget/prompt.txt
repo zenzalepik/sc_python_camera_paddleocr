@@ -1,0 +1,39 @@
+# flow_opencv_roi.txt
+
+[START SYSTEM]
+
+1. INIT
+   - Import OpenCV (cv2) dan numpy
+   - Buka kamera (cv2.VideoCapture)
+   - Tentukan ukuran frame (height, width)
+   - Definisikan ROI:
+       tinggi = height/2
+       lebar  = width*3/4
+       posisi = center frame
+   - Status indikator = OFF
+
+2. LOOP
+   - Capture frame dari kamera
+   - Lakukan preprocessing (grayscale, blur)
+   - Deteksi gerakan/objek (misalnya dengan background subtraction atau contour)
+   - Ambil bounding box objek
+
+3. CHECK ROI
+   - Jika bounding box objek bersinggungan dengan ROI:
+       -> Set indikator = ON
+       -> Gambar kotak ROI dengan warna biru
+       -> Efek berkedip: toggle ON/OFF setiap beberapa frame
+   - Jika tidak bersinggungan:
+       -> Set indikator = OFF
+       -> ROI tetap normal (misalnya garis tipis abu-abu)
+
+4. DISPLAY
+   - Tampilkan frame dengan ROI dan indikator
+   - Jika indikator ON → kotak biru berkedip
+   - Jika indikator OFF → kotak normal
+
+5. EXIT
+   - Tekan tombol 'q' untuk keluar
+   - Release kamera dan destroy window
+
+[END SYSTEM]

@@ -10,7 +10,7 @@ Detection Mode:
 import cv2
 import numpy as np
 import time
-from .variables import (
+from variables import (
     AUTO_RESET_ENABLED as INITIAL_AUTO_RESET_MODE,
     NO_MOTION_THRESHOLD,
     OBJECT_CONFIRM_THRESHOLD,

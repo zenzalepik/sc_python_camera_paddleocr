@@ -151,7 +151,7 @@ class ResponsiveApp:
                 tracehold_frame = None
 
                 if self.widget.cap is not None and self.widget.cap.isOpened():
-                    tracehold_frame, _ = self.widget.get_frame()
+                    tracehold_frame, state = self.widget.get_frame()
 
                 # Get window size
                 window_size = cv2.getWindowImageRect(self.window_name)

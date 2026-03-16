@@ -13,19 +13,17 @@ import numpy as np
 from pathlib import Path
 from datetime import datetime
 import threading
+import re
 from dotenv import load_dotenv
 
-# Load .env file (SAMA PERSIS dengan main.py non_widget)
-# Load from current directory first
-load_dotenv()
-
-# Also load from widget directory (fallback)
+# Load .env file from widget directory (SAMA PERSIS dengan main.py non_widget)
 _widget_dir = os.path.dirname(os.path.abspath(__file__))
-load_dotenv(os.path.join(_widget_dir, '.env'))
+_env_path = os.path.join(_widget_dir, '.env')
+load_dotenv(_env_path)
 
-# Also load from parent directory (for app.py usage)
-_parent_dir = os.path.dirname(_widget_dir)
-load_dotenv(os.path.join(_parent_dir, '.env'))
+# Debug: verify .env loaded
+print(f"\n[ENV] Loading .env from: {_env_path}")
+print(f"[ENV] DELETE_SPACE from .env: {os.getenv('DELETE_SPACE', 'NOT SET')}")
 
 # Import PaddleOCR
 try:
@@ -68,22 +66,27 @@ class PaddleOCRWidget:
         """
         self.config = config or {}
 
-        # Load config from .env first (SAMA PERSIS dengan main.py non_widget)
-        # Then override with config dict if provided
+        # Load config from .env (SAMA PERSIS dengan main.py non_widget)
+        # Config dict overrides .env if provided
         
         # OCR Settings
         self.lang = self.config.get('OCR_LANG', os.getenv('OCR_LANG', 'id'))
         self.conf_threshold = float(self.config.get('CONF_THRESHOLD', os.getenv('CONF_THRESHOLD', '0.5')))
         
-        # Text Processing Settings
-        self.delete_space = self.config.get('DELETE_SPACE', os.getenv('DELETE_SPACE', 'False')) == 'True'
-        self.group_by_line = self.config.get('GROUP_BY_LINE', os.getenv('GROUP_BY_LINE', 'False')) == 'True'
+        # Text Processing Settings - load from .env
+        self.delete_space = self.config.get('DELETE_SPACE', os.getenv('DELETE_SPACE', 'True')) == 'True'
+        self.group_by_line = self.config.get('GROUP_BY_LINE', os.getenv('GROUP_BY_LINE', 'True')) == 'True'
         self.line_tolerance = int(self.config.get('LINE_TOLERANCE', os.getenv('LINE_TOLERANCE', '10')))
         
         # License Plate Detection
-        env_detect_plate = os.getenv('DETECT_LICENSE_PLATE', 'True')
-        self.detect_license_plate = self.config.get('DETECT_LICENSE_PLATE', env_detect_plate) == 'True'
-
+        self.detect_license_plate = self.config.get('DETECT_LICENSE_PLATE', os.getenv('DETECT_LICENSE_PLATE', 'True')) == 'True'
+        
+        # Debug: print settings
+        print(f"\n[CONFIG] DELETE_SPACE: {self.delete_space} (from .env: {os.getenv('DELETE_SPACE')})")
+        print(f"[CONFIG] GROUP_BY_LINE: {self.group_by_line}")
+        print(f"[CONFIG] LINE_TOLERANCE: {self.line_tolerance}")
+        print(f"[CONFIG] DETECT_LICENSE_PLATE: {self.detect_license_plate}\n")
+        
         # Error Handling
         self.hide_popup_unknown_exception = self.config.get(
             'HIDE_POPUP_UNKNOWN_EXCEPTION',
@@ -169,13 +172,19 @@ class PaddleOCRWidget:
                     for i, (text, score, poly) in enumerate(zip(rec_texts, rec_scores, rec_polys)):
                         if score >= self.conf_threshold:
                             processed_text = text.strip()
+                            
+                            # Debug: check delete_space
+                            print(f"  [DEBUG] Original text: '{text}'")
+                            print(f"  [DEBUG] delete_space={self.delete_space}")
+                            
                             if self.delete_space:
                                 processed_text = processed_text.replace(' ', '')
-                            
+                                print(f"  [DEBUG] After delete_space: '{processed_text}'")
+
                             bbox = poly.tolist() if hasattr(poly, 'tolist') else poly
                             avg_y = sum([pt[1] for pt in bbox]) / 4 if len(bbox) == 4 else 0
                             x_min = min([pt[0] for pt in bbox]) if len(bbox) == 4 else 0
-                            
+
                             texts.append({
                                 'text': processed_text,
                                 'confidence': float(score),
@@ -427,40 +436,43 @@ class PaddleOCRWidget:
     def merge_line_texts(self, texts):
         """
         Merge multiple texts pada line yang sama.
-        
+
         Args:
             texts: List of texts pada line yang sama
-            
+
         Returns:
             dict: Merged text
         """
         # Sort by x_min (left to right)
         texts_sorted = sorted(texts, key=lambda x: x['x_min'])
-        
-        # Merge texts
-        merged_text = ' '.join([t['text'] for t in texts_sorted])
-        
+
+        # Merge texts - use space if delete_space is False, otherwise join without space
+        if self.delete_space:
+            merged_text = ''.join([t['text'] for t in texts_sorted])
+        else:
+            merged_text = ' '.join([t['text'] for t in texts_sorted])
+
         # Merge bbox
         all_pts = []
         for t in texts_sorted:
             all_pts.extend(t['bbox'])
-        
+
         # Calculate merged bbox
         x_min = min([pt[0] for pt in all_pts])
         x_max = max([pt[0] for pt in all_pts])
         y_min = min([pt[1] for pt in all_pts])
         y_max = max([pt[1] for pt in all_pts])
-        
+
         merged_bbox = [
             [x_min, y_min],
             [x_max, y_min],
             [x_max, y_max],
             [x_min, y_max]
         ]
-        
+
         # Average confidence
         avg_conf = sum([t['confidence'] for t in texts_sorted]) / len(texts_sorted)
-        
+
         return {
             'text': merged_text,
             'confidence': avg_conf,

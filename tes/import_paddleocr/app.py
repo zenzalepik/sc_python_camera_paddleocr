@@ -11,6 +11,8 @@ import sys
 import os
 import tkinter as tk
 from tkinter import filedialog
+import time
+import threading
 
 # Import PaddleOCR widget
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "paddleocr_widget"))
@@ -84,6 +86,13 @@ class ResponsiveApp:
         
         # Mouse callback
         self.mouse_callback = None
+        
+        # Loading state
+        self.is_loading = False
+        self.loading_start_time = 0
+        self.ocr_result = None
+        self.ocr_error = None
+        self.ocr_thread = None
 
     def draw_left_frame(self, frame, width, height):
         """Draw frame kiri dengan teks 'Selamat Datang' + 4 tombol + hasil deteksi."""
@@ -126,42 +135,59 @@ class ResponsiveApp:
     def draw_result_panel(self, frame, width, height, y_start):
         """Draw panel hasil deteksi di bawah tombol."""
         # Panel area
-        panel_y = y_start + 20
-        panel_height = height - panel_y - 20
+        panel_y = y_start + 30
+        panel_height = height - panel_y - 30
         margin = 10
         
         # Draw panel background
         cv2.rectangle(frame, (margin, panel_y), 
                      (width - margin, height - 20), (240, 240, 240), -1)
         cv2.rectangle(frame, (margin, panel_y), 
-                     (width - margin, height - 20), (128, 128, 128), 1)
+                     (width - margin, height - 20), (128, 128, 128), 2)
         
         # Title
         title = "Hasil Deteksi:"
-        cv2.putText(frame, title, (margin + 10, panel_y + 20),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
+        cv2.putText(frame, title, (margin + 10, panel_y + 25),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
         
-        # Check ada result
-        if self.widget.current_result is None:
-            info = "Belum ada hasil deteksi"
-            cv2.putText(frame, info, (margin + 10, panel_y + 50),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (128, 128, 128), 1)
+        # Check loading state
+        if self.is_loading:
+            # Draw loading indicator
+            self.draw_loading_indicator(frame, width, panel_y, panel_height, margin)
             return
         
-        # Get texts
-        texts = self.widget.get_texts()
-        total = len(texts)
+        # Check error
+        if self.ocr_error:
+            error_text = f"Error: {self.ocr_error}"
+            cv2.putText(frame, error_text, (margin + 10, panel_y + 60),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+            return
+        
+        # Check ada result
+        if self.ocr_result is None and self.widget.current_result is None:
+            info = "Belum ada hasil deteksi"
+            cv2.putText(frame, info, (margin + 10, panel_y + 60),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (128, 128, 128), 1)
+            return
+        
+        # Get texts dari OCR result atau widget
+        if self.ocr_result:
+            texts = self.ocr_result['texts']
+            total = self.ocr_result['count']
+        else:
+            texts = self.widget.get_texts()
+            total = len(texts)
         
         # Show count
         count_info = f"Total: {total} teks"
-        cv2.putText(frame, count_info, (width - margin - 100, panel_y + 20),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 128, 0), 1)
+        cv2.putText(frame, count_info, (width - margin - 120, panel_y + 25),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 128, 0), 1)
         
         # Draw texts (max 10 yang ditampilkan)
         max_display = 10
         start_idx = 0
-        line_height = 25
-        max_lines = (panel_height - 60) // line_height
+        line_height = 28
+        max_lines = (panel_height - 80) // line_height
         
         # Scroll jika lebih dari max_lines
         if total > max_lines:
@@ -179,34 +205,127 @@ class ResponsiveApp:
                 conf = 0.0
             
             # Truncate text jika terlalu panjang
-            max_chars = (width - 40) // 10
+            max_chars = (width - 60) // 10
             if len(text) > max_chars:
                 text = text[:max_chars-3] + "..."
             
             # Draw text line
-            y_pos = panel_y + 50 + (i - start_idx) * line_height
+            y_pos = panel_y + 65 + (i - start_idx) * line_height
             
             # Background selang-seling
-            color = (255, 255, 255) if i % 2 == 0 else (240, 240, 240)
-            cv2.rectangle(frame, (margin + 5, y_pos - 18),
-                         (width - margin - 5, y_pos + 5), color, -1)
+            color = (255, 255, 255) if i % 2 == 0 else (230, 230, 230)
+            cv2.rectangle(frame, (margin + 5, y_pos - 20),
+                         (width - margin - 5, y_pos + 8), color, -1)
             
             # Text
             label = f"{i+1}. {text}"
             cv2.putText(frame, label, (margin + 10, y_pos),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 0), 1)
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
             
             # Confidence (kanan)
             conf_label = f"({conf:.2f})"
-            (conf_w, conf_h), _ = cv2.getTextSize(conf_label, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
-            cv2.putText(frame, conf_label, (width - margin - conf_w - 10, y_pos),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 128, 0), 1)
+            (conf_w, conf_h), _ = cv2.getTextSize(conf_label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+            cv2.putText(frame, conf_label, (width - margin - conf_w - 15, y_pos),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 128, 0), 1)
         
         # Info jika ada lebih banyak teks
         if total > max_display:
             info = f"... dan {total - max_display} teks lainnya"
-            cv2.putText(frame, info, (margin + 10, height - 35),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.4, (128, 128, 128), 1)
+            cv2.putText(frame, info, (margin + 10, height - 40),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.45, (128, 128, 128), 1)
+
+    def draw_loading_indicator(self, frame, width, panel_y, panel_height, margin):
+        """Draw loading indicator saat OCR processing."""
+        # Calculate elapsed time
+        elapsed = time.time() - self.loading_start_time
+        
+        # Center positions
+        center_x = width // 2
+        start_y = panel_y + 80
+        
+        # Draw loading message
+        loading_text = "⏳ Processing OCR..."
+        (text_w, text_h), _ = cv2.getTextSize(loading_text, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)
+        text_x = center_x - text_w // 2
+        cv2.putText(frame, loading_text, (text_x, start_y),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+        
+        # Draw elapsed time
+        time_text = f"⏱️  Elapsed: {elapsed:.1f}s"
+        (time_w, time_h), _ = cv2.getTextSize(time_text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 1)
+        time_x = center_x - time_w // 2
+        cv2.putText(frame, time_text, (time_x, start_y + 40),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (100, 100, 100), 1)
+        
+        # Draw animated loading bar
+        bar_width = 400
+        bar_height = 25
+        bar_x = center_x - bar_width // 2
+        bar_y = start_y + 80
+        
+        # Background bar
+        cv2.rectangle(frame, (bar_x, bar_y), 
+                     (bar_x + bar_width, bar_y + bar_height), (200, 200, 200), -1)
+        cv2.rectangle(frame, (bar_x, bar_y), 
+                     (bar_x + bar_width, bar_y + bar_height), (100, 100, 100), 2)
+        
+        # Animated fill (pulsing effect)
+        fill_width = int((elapsed * 40) % (bar_width + 100)) - 50
+        if fill_width < 10:
+            fill_width = 10
+        if fill_width > bar_width:
+            fill_width = bar_width
+        
+        # Pulsing color (blue ↔ cyan ↔ green)
+        pulse = int(elapsed * 3) % 3
+        if pulse == 0:
+            color = (255, 0, 0)  # Blue
+        elif pulse == 1:
+            color = (255, 255, 0)  # Cyan
+        else:
+            color = (0, 255, 0)  # Green
+        
+        cv2.rectangle(frame, (bar_x + 2, bar_y + 2), 
+                     (bar_x + fill_width - 2, bar_y + bar_height - 2), color, -1)
+        
+        # Draw percentage
+        percent = int((fill_width / bar_width) * 100)
+        percent_text = f"{percent}%"
+        (pct_w, pct_h), _ = cv2.getTextSize(percent_text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 1)
+        pct_x = center_x - pct_w // 2
+        cv2.putText(frame, percent_text, (pct_x, bar_y + bar_height + 25),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 128, 0), 2)
+        
+        # Draw spinner dots
+        dot_count = 5
+        dot_spacing = 40
+        dots_start_x = center_x - (dot_count * dot_spacing) // 2
+        dots_y = bar_y + bar_height + 60
+        
+        for i in range(dot_count):
+            dot_x = dots_start_x + i * dot_spacing
+            dot_y = dots_y
+            
+            # Animate dots - wave effect
+            dot_phase = (int(elapsed * 10) + i * 2) % (dot_count * 2)
+            if dot_phase < dot_count:
+                dot_active = True
+                dot_radius = 8
+                dot_color = (0, 255, 0)  # Green
+            else:
+                dot_active = False
+                dot_radius = 5
+                dot_color = (200, 200, 200)  # Gray
+            
+            cv2.circle(frame, (dot_x, dot_y), dot_radius, dot_color, -1)
+            cv2.circle(frame, (dot_x, dot_y), dot_radius, (100, 100, 100), 1)
+        
+        # Draw please wait message
+        wait_text = "Please wait..."
+        (wait_w, wait_h), _ = cv2.getTextSize(wait_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+        wait_x = center_x - wait_w // 2
+        cv2.putText(frame, wait_text, (wait_x, dots_y + 35),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (128, 128, 128), 1)
 
     def draw_right_frame(self, frame, start_x, width, height, ocr_frame=None):
         """Draw frame kanan dengan PaddleOCR widget."""
@@ -261,15 +380,33 @@ class ResponsiveApp:
         return False
 
     def detect_text(self):
-        """Detect text dalam gambar."""
+        """Detect text dalam gambar (run di thread terpisah)."""
         if self.current_image is None:
             print("[WARNING] No image loaded. Open image first.")
             return
+        
+        # Check jika sudah ada thread berjalan
+        if self.ocr_thread and self.ocr_thread.is_alive():
+            print("[WARNING] OCR already running!")
+            return
+        
+        # Set loading state
+        self.is_loading = True
+        self.loading_start_time = time.time()
+        self.ocr_result = None
+        self.ocr_error = None
         
         print("\n" + "="*60)
         print("Running OCR...")
         print("="*60)
         
+        # Start OCR thread
+        self.ocr_thread = threading.Thread(target=self._ocr_worker)
+        self.ocr_thread.daemon = True
+        self.ocr_thread.start()
+
+    def _ocr_worker(self):
+        """OCR worker thread."""
         try:
             # Process dengan widget
             frame_with_boxes, result = self.widget.process_frame(self.current_image)
@@ -277,8 +414,14 @@ class ResponsiveApp:
             # Update current image dengan bounding boxes
             self.current_image = frame_with_boxes
             
-            # Print results
+            # Get results
             texts = self.widget.get_texts()
+            
+            self.ocr_result = {
+                'texts': texts,
+                'count': len(texts)
+            }
+            
             print(f"\n[SUCCESS] Detected {len(texts)} text(s):")
             for i, text in enumerate(texts, 1):
                 print(f"  [{i}] {text}")
@@ -286,7 +429,13 @@ class ResponsiveApp:
             print("\n" + "="*60)
             
         except Exception as e:
+            self.ocr_error = str(e)
             print(f"\n[ERROR] OCR failed: {e}")
+        finally:
+            # Clear loading state
+            elapsed = time.time() - self.loading_start_time
+            self.is_loading = False
+            print(f"[INFO] OCR completed in {elapsed:.2f}s")
 
     def export_result(self):
         """Export hasil OCR."""

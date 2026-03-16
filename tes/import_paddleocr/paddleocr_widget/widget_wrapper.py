@@ -16,11 +16,16 @@ import threading
 from dotenv import load_dotenv
 
 # Load .env file (SAMA PERSIS dengan main.py non_widget)
+# Load from current directory first
 load_dotenv()
 
-# Also load .env from widget directory (fallback)
+# Also load from widget directory (fallback)
 _widget_dir = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(_widget_dir, '.env'))
+
+# Also load from parent directory (for app.py usage)
+_parent_dir = os.path.dirname(_widget_dir)
+load_dotenv(os.path.join(_parent_dir, '.env'))
 
 # Import PaddleOCR
 try:
@@ -75,6 +80,10 @@ class PaddleOCRWidget:
         self.group_by_line = self.config.get('GROUP_BY_LINE', os.getenv('GROUP_BY_LINE', 'False')) == 'True'
         self.line_tolerance = int(self.config.get('LINE_TOLERANCE', os.getenv('LINE_TOLERANCE', '10')))
         
+        # License Plate Detection
+        env_detect_plate = os.getenv('DETECT_LICENSE_PLATE', 'True')
+        self.detect_license_plate = self.config.get('DETECT_LICENSE_PLATE', env_detect_plate) == 'True'
+
         # Error Handling
         self.hide_popup_unknown_exception = self.config.get(
             'HIDE_POPUP_UNKNOWN_EXCEPTION',
@@ -91,6 +100,7 @@ class PaddleOCRWidget:
         self.current_image = None
         self.current_image_path = None
         self.current_result = None
+        self.detected_plate = None  # Store detected license plate
         
         # Initialize PaddleOCR
         self.ocr = None
@@ -204,16 +214,84 @@ class PaddleOCRWidget:
     def process_frame(self, frame):
         """
         Process frame (numpy array) dengan OCR.
-        
+
         Args:
             frame: OpenCV frame (numpy array)
-            
+
         Returns:
             tuple: (frame_with_boxes, result_dict)
         """
         result = self.process_image(frame)
         frame_with_boxes = self.draw_result(frame)
+        
+        # Detect license plate if enabled
+        if self.detect_license_plate:
+            self.detected_plate = self.detect_license_plate_from_result()
+        
         return frame_with_boxes, result
+
+    def detect_license_plate_from_result(self):
+        """
+        Detect license plate from OCR result.
+        
+        Logic:
+        - Cari teks yang mengandung 3 atau 4 angka berturut-turut
+        - Tidak boleh ada huruf di antara angka
+        - Boleh ada huruf sebelum dan setelah rangkaian angka
+        - Return SELURUH teks plat nomor (bukan cuma angka)
+        
+        Returns:
+            str or None: Full license plate text if found, None otherwise
+        """
+        if self.current_result is None:
+            return None
+        
+        texts = self.current_result.get('texts', [])
+        
+        print(f"\n[PLATE DETECTION] Checking {len(texts)} text(s)...")
+        
+        for item in texts:
+            text = item.get('text', '')
+            
+            print(f"  Checking: '{text}'")
+            
+            # Skip if text too short
+            if len(text) < 3:
+                print(f"    → Skip (too short)")
+                continue
+            
+            # Remove spasi untuk checking pattern
+            text_no_space = text.replace(' ', '')
+            
+            # Regex pattern: optional letters, then 3-4 digits, then optional letters
+            # No letters allowed BETWEEN the digits
+            import re
+            
+            # Pattern: [A-Z]*[0-9]{3,4}[A-Z]*
+            pattern = r'[A-Z]*[0-9]{3,4}[A-Z]*'
+            
+            # Convert to uppercase for matching
+            text_upper = text_no_space.upper()
+            
+            # Find all matches
+            matches = re.findall(pattern, text_upper)
+            
+            print(f"    Text (no space): '{text_no_space}' → '{text_upper}'")
+            print(f"    Pattern: '{pattern}'")
+            print(f"    Matches: {matches}")
+            
+            for match in matches:
+                # Verify the match has 3-4 consecutive digits
+                digits = re.search(r'[0-9]{3,4}', match)
+                if digits:
+                    # FOUND! Return the ORIGINAL text (with spaces)
+                    print(f"    → FOUND PLATE: '{text}' (matched: '{match}')")
+                    return text  # Return original text, not just the match
+                else:
+                    print(f"    → No 3-4 digits in '{match}'")
+        
+        print(f"  No plate found\n")
+        return None
 
     def get_result(self):
         """
@@ -240,6 +318,15 @@ class PaddleOCRWidget:
         if self.current_result is None:
             return []
         return [t['text'] for t in self.current_result.get('texts', [])]
+
+    def get_detected_plate(self):
+        """
+        Get detected license plate number.
+        
+        Returns:
+            str or None: License plate number if found, None otherwise
+        """
+        return self.detected_plate
 
     def draw_result(self, image=None):
         """

@@ -129,13 +129,52 @@ class ResponsiveApp:
             btn_y = start_y
             button.draw(frame, btn_x, btn_y, button_width, button_height, font_scale_btn)
 
+        # Draw plat nomor panel (jika ada)
+        self.draw_plate_panel(frame, width, height, start_y + button_height)
+
         # Draw hasil deteksi panel di bawah tombol
         self.draw_result_panel(frame, width, height, start_y + button_height)
 
+    def draw_plate_panel(self, frame, width, height, y_start):
+        """Draw panel plat nomor terdeteksi."""
+        # Get detected plate from ocr_result or widget
+        plate = None
+        
+        if self.ocr_result and 'plate' in self.ocr_result:
+            plate = self.ocr_result['plate']
+        
+        if plate is None:
+            plate = self.widget.get_detected_plate()
+        
+        if plate is None:
+            return  # Don't draw if no plate detected
+        
+        panel_y = y_start + 20
+        margin = 10
+        panel_height = 70  # Increased from 50 to 70 for taller panel
+        
+        # Draw panel background (green gradient)
+        cv2.rectangle(frame, (margin, panel_y), 
+                     (width - margin, panel_y + panel_height), (0, 100, 0), -1)
+        cv2.rectangle(frame, (margin, panel_y), 
+                     (width - margin, panel_y + panel_height), (0, 255, 0), 2)
+        
+        # Draw title (top line)
+        title = "Plat Nomor Terdeteksi:"
+        cv2.putText(frame, title, (margin + 15, panel_y + 25),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+        
+        # Draw plate number (large, bold, centered) - second line
+        plate_text = plate.upper()
+        (plate_w, plate_h), _ = cv2.getTextSize(plate_text, cv2.FONT_HERSHEY_SIMPLEX, 1.5, 3)
+        plate_x = (width - plate_w) // 2
+        cv2.putText(frame, plate_text, (plate_x, panel_y + 58),
+                   cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 255, 255), 3)
+
     def draw_result_panel(self, frame, width, height, y_start):
         """Draw panel hasil deteksi di bawah tombol."""
-        # Panel area
-        panel_y = y_start + 30
+        # Panel area - start lower to make room for plate panel
+        panel_y = y_start + 100  # Increased from 30 to 100 to push down
         panel_height = height - panel_y - 30
         margin = 10
         
@@ -417,14 +456,22 @@ class ResponsiveApp:
             # Get results
             texts = self.widget.get_texts()
             
+            # Get detected plate
+            plate = self.widget.get_detected_plate()
+            
             self.ocr_result = {
                 'texts': texts,
-                'count': len(texts)
+                'count': len(texts),
+                'plate': plate  # Store plate number
             }
             
             print(f"\n[SUCCESS] Detected {len(texts)} text(s):")
             for i, text in enumerate(texts, 1):
                 print(f"  [{i}] {text}")
+            
+            # Print plate if found
+            if plate:
+                print(f"\n[🚗 PLATE DETECTED] {plate}")
             
             print("\n" + "="*60)
             

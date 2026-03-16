@@ -96,6 +96,9 @@ class YOLOWidget:
             if 'CLEAN_UI' in config:
                 self.detector.clean_ui = config['CLEAN_UI']
         
+        # Session success tracking (untuk "Terimakasih" message)
+        self.session_success_time = None
+        
         # Start camera
         self._start_camera()
 
@@ -175,6 +178,12 @@ class YOLOWidget:
         # Handle parking session
         if self.detector.yolo_enabled:
             self.detector.handle_parking_session(result, frame)
+            
+            # Check jika parking session baru saja selesai
+            if (self.detector.parking_session.phase == ParkingPhase.PREVIEW_READY and 
+                self.session_success_time is None):
+                self.session_success_time = time.time()
+                print("\n[✅ SESSION COMPLETE] Parking berhasil!")
 
         # Draw UI (kecuali preview mode)
         if not (self.detector.show_preview and self.detector.preview_frames):
@@ -197,7 +206,16 @@ class YOLOWidget:
             'fps': self.detector.fps,
             'yolo_enabled': self.detector.yolo_enabled,
             'clean_ui': self.detector.clean_ui,
+            'session_success_time': self.session_success_time,
         }
+        
+        # Reset session_success_time setelah 2 detik
+        if self.session_success_time is not None:
+            if time.time() - self.session_success_time > 2.0:
+                self.session_success_time = None
+                # Reset parking session
+                self.detector.parking_session.phase = ParkingPhase.NO_VEHICLE
+                self.detector.parking_session.is_active = False
         
         return frame, state
 

@@ -63,13 +63,19 @@ class ResponsiveApp:
         # Coba camera_id=0 (default), jika error coba 1, 2, dst
         self.widget = YOLOWidget(camera_id=0)
 
-    def draw_left_frame(self, frame, width, height):
-        """Draw frame kiri dengan teks 'Selamat Datang' dan 4 tombol horizontal."""
+    def draw_left_frame(self, frame, width, height, show_terimakasih=False):
+        """Draw frame kiri dengan teks 'Selamat Datang' atau 'Terimakasih'."""
         # Background putih
         cv2.rectangle(frame, (0, 0), (width, height), (255, 255, 255), -1)
 
-        # Teks "Selamat Datang"
-        text = "Selamat Datang"
+        # Tentukan teks dan warna berdasarkan state
+        if show_terimakasih:
+            text = "Terimakasih"
+            color = (0, 255, 0)  # Hijau
+        else:
+            text = "Selamat Datang"
+            color = (0, 0, 0)  # Hitam
+
         font_scale = min(width, height) / 500
         thickness = max(1, int(font_scale * 2))
 
@@ -81,7 +87,7 @@ class ResponsiveApp:
         text_y = height // 6
 
         cv2.putText(frame, text, (text_x, text_y),
-                   cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), thickness)
+                   cv2.FONT_HERSHEY_SIMPLEX, font_scale, color, thickness)
 
         # Draw buttons horizontal
         button_width = width // 6
@@ -113,12 +119,17 @@ class ResponsiveApp:
             cv2.putText(frame, text, (start_x + 10, height // 2),
                        cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
 
-    def draw(self, frame, yolo_frame=None):
+    def draw(self, frame, yolo_frame=None, state=None):
         """Draw semua UI elements."""
         height, width = frame.shape[:2]
         half_width = width // 2
 
-        self.draw_left_frame(frame[:, :half_width], half_width, height)
+        # Check jika session baru saja selesai (show "Terimakasih")
+        show_terimakasih = False
+        if state and state.get('session_success_time') is not None:
+            show_terimakasih = True
+
+        self.draw_left_frame(frame[:, :half_width], half_width, height, show_terimakasih)
         self.draw_right_frame(frame, half_width, half_width, height, yolo_frame)
 
         # Divider line
@@ -153,9 +164,10 @@ class ResponsiveApp:
             while True:
                 # Get frame dari widget
                 yolo_frame = None
+                state = {}
                 
                 if self.widget.detector.yolo_enabled:
-                    yolo_frame, _ = self.widget.get_frame()
+                    yolo_frame, state = self.widget.get_frame()
 
                 # Get window size
                 window_size = cv2.getWindowImageRect(self.window_name)
@@ -168,8 +180,8 @@ class ResponsiveApp:
                 # Create frame
                 frame = np.zeros((current_height, current_width, 3), dtype=np.uint8)
 
-                # Draw UI
-                self.draw(frame, yolo_frame)
+                # Draw UI dengan state
+                self.draw(frame, yolo_frame, state)
 
                 # Show
                 cv2.imshow(self.window_name, frame)

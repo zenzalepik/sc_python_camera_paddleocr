@@ -1,468 +1,432 @@
-# 🎯 Real-time Object Distance Detection
+# YOLO Widget - Parking System
 
-Aplikasi streaming real-time untuk deteksi object yang mendekat/menjauh dari kamera menggunakan **YOLOv8**.
+Widget reusable untuk deteksi object dengan sistem parkir 4-fase.
 
-![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)
-![YOLO](https://img.shields.io/badge/YOLO-v8-purple.svg)
-![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)
-
----
-
-## ✨ Fitur
-
-- ✅ **Real-time Detection** - Deteksi object dengan YOLOv8 Nano (cepat & ringan)
-- ✅ **Distance Estimation** - Deteksi apakah object mendekat, menjauh, atau tetap
-- ✅ **SIAGA Alert System** - Alert "⚠️ SIAGA" saat object mendekat 3 frame berturut-turut
-- ✅ **SIAGA Hold Timer** - Alert tetap aktif 3 detik setelah object hilang
-- ✅ **Visual Indicators** - Bounding box dengan warna berbeda untuk setiap status
-- ✅ **Blinking SIAGA Alert** - Alert berkedip untuk menarik perhatian
-- ✅ **FPS Counter** - Monitoring performa real-time
-- ✅ **Snapshot** - Simpan frame dengan deteksi
-- ✅ **Adjustable Threshold** - Atur confidence threshold on-the-fly
-- ✅ **Multi-object Tracking** - Track multiple objects sekaligus
-- ✅ **CLEAN_UI Mode** - Mode bersih tanpa UI elements, hanya camera view
+Widget ini adalah versi reusable dari aplikasi `non_widget/main.py` dengan **semua fitur lengkap**:
+- Object Detection (YOLOv8n)
+- Distance Tracking (mendekat/menjauh)
+- SIAGA System
+- Parking Session (4 Fase: SIAGA → TETAP → LOOP → TAP)
+- UI Overlays lengkap
+- Signal "Terimakasih" hijau saat parking berhasil
 
 ---
 
-## 🚀 Quick Start
+## 📦 Struktur Folder
 
-### 1. Install Dependencies
-
-```bash
-pip install -r requirements.txt
 ```
-
-### 2. Run Application
-
-```bash
-python main.py
-```
-
-### 3. Enable CLEAN_UI Mode (Optional)
-
-Untuk menyembunyikan semua elemen UI dan hanya menampilkan camera view:
-
-**Via variables.py:**
-```python
-# Edit file variables.py
-CLEAN_UI = True
+import_yolo8n/
+├── yolo_widget/              # ✅ WIDGET REUSABLE
+│   ├── __init__.py           # Module exports
+│   ├── main.py               # Full logic (1806 baris dari non_widget)
+│   ├── widget_wrapper.py     # Wrapper untuk import mudah
+│   ├── variables.py          # Configuration
+│   ├── yolov8n.pt            # YOLO model
+│   ├── README.md             # Dokumentasi widget
+│   └── ...
+│
+├── app.py                    # Demo aplikasi menggunakan widget
+├── non_widget/               # Aplikasi standalone asli (referensi)
+└── README.md                 # Dokumentasi ini
 ```
 
 ---
 
-## 🎨 Visual Indicators
+## 🚀 Cara Menggunakan Widget di Project Lain
 
-| Warna | Status | Keterangan |
-|-------|--------|------------|
-| 🔴 **MERAH** | **MENDEKAT** | Object semakin dekat dengan kamera |
-| 🟢 **HIJAU** | **TETAP** | Object pada jarak yang sama |
-| 🔵 **BIRU** | **MENJAUH** | Object semakin jauh dari kamera |
-| 🟠 **ORANGE + BLINKING** | **⚠️ SIAGA** | Object terdeteksi mendekat 3x berturut-turut |
+### Step 1: Copy Folder Widget
 
----
+Copy seluruh folder `yolo_widget` ke project Anda:
 
-## 🧹 CLEAN_UI Mode
+```
+your_project/
+├── main.py           # Aplikasi Anda
+└── yolo_widget/      # ← COPY folder ini
+    ├── __init__.py
+    ├── main.py
+    ├── widget_wrapper.py
+    ├── variables.py
+    ├── yolov8n.pt
+    └── ...
+```
 
-Mode ini menyembunyikan semua elemen visual UI (bounding box, label, panel, legend, dll) dan hanya menampilkan camera view bersih.
-
-**Saat CLEAN_UI=true:**
-- ❌ Tidak ada bounding box
-- ❌ Tidak ada label atau text overlay
-- ❌ Tidak ada panel info/legend
-- ❌ Tidak ada preview window
-- ✅ Terminal logs tetap aktif untuk debugging
-- ✅ Semua fungsi sistem tetap berjalan normal
-- ✅ **YOLO dapat di-toggle dengan tombol Y**
-
-**Gunakan CLEAN_UI mode untuk:**
-- Recording video bersih tanpa overlay
-- Integrasi dengan sistem lain
-- Debugging via terminal logs
-- Performance testing tanpa rendering overhead
-- **Menonaktifkan YOLO sementara untuk hemat CPU**
-
----
-
-## ⚡ Camera Optimization
-
-Untuk membuat camera lebih smooth tanpa mengubah logika sistem:
-
-### **1. Edit file `variables.py`**
+### Step 2: Import Widget
 
 ```python
-# Resolution - Lower = smoother, Higher = better quality
-CAMERA_WIDTH = 320
-CAMERA_HEIGHT = 240
-
-# YOLO Frame Skipping
-# 0 = Detect every frame (accurate)
-# 1 = Skip 1 frame (balanced - RECOMMENDED)
-# 2 = Skip 2 frames (very smooth)
-YOLO_SKIP_FRAMES = 0
+from yolo_widget import YOLOWidget
 ```
 
-### **2. Rekomendasi Settings**
-
-| Use Case | Resolution | YOLO_SKIP_FRAMES | Expected FPS |
-|----------|-----------|------------------|--------------|
-| **Smooth** | 320x240 | 1 | ~30 FPS |
-| **Balanced** | 320x240 | 0 | ~20 FPS |
-| **Quality** | 640x480 | 1 | ~15 FPS |
-| **Max Accuracy** | 640x480 | 0 | ~10 FPS |
-
-### **3. Cara Kerja Optimasi**
-
-**Resolution (320x240 vs 640x480):**
-- Resolusi lebih rendah = frame lebih kecil = YOLO inference lebih cepat
-- Sistem tetap bekerja dengan parameter yang sama
-- Hanya ukuran input yang berbeda, akurasi tetap baik
-
-**Frame Skipping:**
-- `YOLO_SKIP_FRAMES=0`: YOLO detect setiap frame (paling akurat)
-- `YOLO_SKIP_FRAMES=1`: YOLO detect setiap 2 frame (skip 1 frame)
-- `YOLO_SKIP_FRAMES=2`: YOLO detect setiap 3 frame (skip 2 frame)
-- Frame yang di-skip menggunakan hasil deteksi sebelumnya (cache)
-- Tracking dan SIAGA logic tetap berjalan normal
-
-### **4. Test Performance**
-
-Saat aplikasi start, akan muncul info di terminal:
-```
-[INFO] Camera view area: 320x240 = 76800px
-[INFO] Camera FPS: 30.0
-[INFO] YOLO skip frames: 0
-```
-
-Monitor FPS di pojok kiri atas window (jika CLEAN_UI=false).
-
----
-
-## 🚨 SIAGA Alert System
-
-### Cara Kerja:
-
-```
-1. Object terdeteksi MENDEKAT (bounding box membesar)
-        ↓
-2. Sistem menghitung frame berturut-turut
-        ↓
-3. Setelah 3 frame MENDEKAT → SIAGA diaktifkan
-        ↓
-4. Alert ditampilkan:
-   - Badge "⚠️ SIAGA" di atas bounding box
-   - Panel alert berkedip di info panel
-   - Console log "[⚠️ SIAGA ACTIVE]"
-        ↓
-5. Object hilang dari frame
-        ↓
-6. SIAGA tetap aktif selama 3 detik (hold timer)
-        ↓
-7. Setelah 3 detik → SIAGA cleared
-```
-
-### Configuration:
-
-Edit di `main.py`:
+### Step 3: Buat Widget Instance
 
 ```python
-# ObjectDistanceTracker parameters
-self.tracker = ObjectDistanceTracker(
-    max_history=30,              # Frame history untuk tracking
-    siaga_frame_threshold=3,     # Frame berturut-turut untuk trigger SIAGA
-    siaga_hold_time=3.0          # Detik SIAGA tetap aktif setelah object hilang
+# Basic usage
+widget = YOLOWidget(camera_id=0)
+
+# Dengan custom config
+widget = YOLOWidget(
+    camera_id=0,
+    config={
+        'YOLO_CONFIDENCE_THRESHOLD': 0.5,
+        'TARGET_CLASSES': [0],  # Hanya detect person
+        'CLEAN_UI': False,
+    }
 )
 ```
 
-### SIAGA Flow Diagram:
+### Step 4: Get Frame dalam Loop
 
-```
-Frame 1: MENDEKAT → Counter = 1
-Frame 2: MENDEKAT → Counter = 2
-Frame 3: MENDEKAT → Counter = 3 → ⚠️ SIAGA ACTIVATED! 🔴
-Frame 4: Object hilang → Timer = 3.0s
-Frame 5: - → Timer = 2.5s
-Frame 6: - → Timer = 2.0s
-Frame 7: - → Timer = 1.5s
-Frame 8: - → Timer = 1.0s
-Frame 9: - → Timer = 0.5s
-Frame 10: Timer = 0.0s → ✓ SIAGA CLEARED 🟢
-```
-
----
-
-## 🎯 Cara Kerja
-
-### 1. **Object Detection**
-- Menggunakan YOLOv8 untuk mendeteksi object (person, car, dll)
-- Setiap object mendapat bounding box
-
-### 2. **Distance Estimation**
-- Menghitung **area bounding box** sebagai proxy untuk jarak
-- Prinsip: Object yang lebih dekat = bounding box lebih besar
-
-### 3. **Trend Analysis**
-- Menganalisa perubahan area selama 5-30 frame terakhir
-- Menghitung persentase perubahan area
-
-### 4. **Status Determination**
-```
-Area bertambah > 10%  → MENDEKAT (Merah)
-Area berkurang > 10%  → MENJAUH (Biru)
-Perubahan < 10%       → TETAP (Hijau)
-```
-
----
-
-## ⌨️ Keyboard Controls
-
-| Tombol | Fungsi |
-|--------|--------|
-| `Q` | Quit/Keluar |
-| `Y` | **TOGGLE YOLO** - Turn ON/OFF YOLO detection (press Y again to re-enable) |
-| `S` | Save snapshot (screenshot) |
-| `+` / `=` | Increase confidence threshold |
-| `-` | Decrease confidence threshold |
-
----
-
-## 🎮 YOLO Toggle Feature
-
-**Shortcut: Tekan tombol `Y`**
-
-Fitur untuk menyalakan/mematikan YOLO detection secara dinamis tanpa restart aplikasi.
-
-### **Cara Kerja:**
-
-```
-Press Y (1st time)  → ❌ YOLO OFF  → CPU usage turun, detection berhenti
-Press Y (2nd time)  → ✅ YOLO ON   → CPU usage normal, detection aktif
-Press Y (3rd time)  → ❌ YOLO OFF  → CPU usage turun, detection berhenti
-```
-
-### **Kapan Menggunakan:**
-
-| Situasi | YOLO Status | Alasan |
-|---------|-------------|--------|
-| **Idle/Tidak ada object** | OFF | Hemat CPU & RAM |
-| **Object mulai terdeteksi** | ON | Mulai tracking |
-| **Testing tanpa detection** | OFF | Hanya preview camera |
-| **Performance critical** | OFF | Prioritaskan FPS |
-
-### **Terminal Feedback:**
-
-```
-[✅ YOLO] Detection ACTIVE         ← YOLO ON
-[❌ YOLO] Detection DISABLED       ← YOLO OFF (press Y to enable)
-```
-
-### **Setting Default:**
-
-Edit `variables.py` untuk menentukan status YOLO saat startup:
 ```python
-YOLO_ENABLED_DEFAULT = True   # YOLO ON saat start
-# atau
-YOLO_ENABLED_DEFAULT = False  # YOLO OFF saat start
+import cv2
+
+while True:
+    frame, state = widget.get_frame()
+    
+    if frame is None:
+        break
+    
+    # Frame SUDAH ADA UI LENGKAP:
+    # - Detection boxes
+    # - Tracking ID
+    # - SIAGA indicator
+    # - Info panel
+    # - Parking session info
+    
+    cv2.imshow('My App', frame)
+    
+    key = cv2.waitKey(1) & 0xFF
+    if key == ord('q'):
+        break
+
+widget.release()
+cv2.destroyAllWindows()
 ```
 
 ---
 
-## 📊 Algoritma Distance Estimation
+## 🎯 Contoh Lengkap
 
-### Flow Chart:
-```
-Frame Input → YOLO Detection → Bounding Box → Area Calculation
-                                                    ↓
-                    Status Update ← Trend Analysis ← History Buffer
-                        ↓
-                Draw Bounding Box (Color-coded)
-                        ↓
-                  Display Output
-```
+### Contoh 1: Basic Detection
 
-### Formula:
 ```python
-# Hitung area bounding box
-area = (x2 - x1) * (y2 - y1)
+from yolo_widget import YOLOWidget
+import cv2
 
-# Hitung perubahan area
-first_half = mean(areas[:n//2])
-second_half = mean(areas[n//2:])
+widget = YOLOWidget(camera_id=0)
 
-change_percent = ((second_half - first_half) / first_half) * 100
+while True:
+    frame, state = widget.get_frame()
+    
+    if frame is None:
+        break
+    
+    # Akses state
+    detections = state.get('detections', [])
+    tracked_id = state.get('tracked_object_id')
+    siaga_active = state.get('siaga_active', False)
+    
+    print(f"Tracked: {tracked_id}, SIAGA: {siaga_active}")
+    
+    cv2.imshow('Detection', frame)
+    
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
 
-# Tentukan status
-if change_percent > 10:
-    status = "MENDEKAT"   # Merah
-elif change_percent < -10:
-    status = "MENJAUH"    # Biru
-else:
-    status = "TETAP"      # Hijau
+widget.release()
+cv2.destroyAllWindows()
+```
+
+### Contoh 2: Dengan Parking System
+
+```python
+from yolo_widget import YOLOWidget, ParkingPhase
+import cv2
+
+widget = YOLOWidget(camera_id=0)
+
+while True:
+    frame, state = widget.get_frame()
+    
+    if frame is None:
+        break
+    
+    phase = state.get('parking_phase')
+    session_active = state.get('parking_session_active', False)
+    
+    # Handle keyboard
+    key = cv2.waitKey(1) & 0xFF
+    
+    if key == ord('l'):  # Loop Detector (FASE 3)
+        widget.trigger_loop_detector(frame)
+    
+    elif key == ord('t'):  # Tap Card (FASE 4)
+        widget.trigger_tap_card(frame)
+    
+    elif key == ord('q'):
+        break
+    
+    cv2.imshow('Parking System', frame)
+
+widget.release()
+cv2.destroyAllWindows()
+```
+
+### Contoh 3: Integrasi dengan Barrier Gate
+
+```python
+from yolo_widget import YOLOWidget, ParkingPhase
+import cv2
+import requests  # Untuk API call
+
+widget = YOLOWidget(camera_id=0)
+
+last_phase = None
+
+while True:
+    frame, state = widget.get_frame()
+    
+    if frame is None:
+        break
+    
+    current_phase = state.get('parking_phase')
+    
+    # Detect phase change to PREVIEW_READY
+    if (last_phase != current_phase and 
+        current_phase == ParkingPhase.PREVIEW_READY):
+        
+        # Kirim signal ke barrier gate
+        requests.post('http://localhost:8080/barrier/open')
+        print("✅ Barrier opened!")
+    
+    last_phase = current_phase
+    
+    cv2.imshow('Parking', frame)
+    
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+widget.release()
+cv2.destroyAllWindows()
+```
+
+### Contoh 4: Custom Layout (Split Screen)
+
+```python
+from yolo_widget import YOLOWidget
+import cv2
+import numpy as np
+
+widget = YOLOWidget(camera_id=0)
+
+while True:
+    frame, state = widget.get_frame()
+    
+    if frame is None:
+        break
+    
+    # Buat layout custom: kiri teks, kanan camera
+    full_frame = np.zeros((700, 1280, 3), dtype=np.uint8)
+    
+    # Frame kiri: Teks "Selamat Datang"
+    left_frame = full_frame[:, :640]
+    left_frame[:] = 255  # White background
+    cv2.putText(left_frame, "Selamat Datang", (170, 350),
+               cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 0, 0), 3)
+    
+    # Frame kanan: YOLO output
+    yolo_resized = cv2.resize(frame, (640, 700))
+    full_frame[:, 640:] = yolo_resized
+    
+    cv2.imshow('Custom Layout', full_frame)
+    
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+widget.release()
+cv2.destroyAllWindows()
 ```
 
 ---
 
-## 🖼️ Output Display
+## 📖 API Reference
 
+### Constructor
+
+```python
+widget = YOLOWidget(
+    camera_id=0,              # Camera device ID (default: 0)
+    config=None               # Optional config dict
+)
 ```
-┌─────────────────────────────────────────┐
-│ FPS: 25.3  Time: 14:30:25              │
-│                                          │
-│  Legend:                                 │
-│  🔴 Mendekat   🔵 Menjauh               │
-│  🟢 Tetap                               │
-│                                          │
-│     ┌─────────┐                          │
-│     │ PERSON  │ [MENDEKAT] 🔴            │
-│     │ 0.95    │                          │
-│     └─────────┘                          │
-│        Area: 45000                       │
-│                                          │
-│           ┌──────┐                       │
-│           │ CAR  │ [TETAP] 🟢            │
-│           │ 0.87 │                       │
-│           └──────┘                       │
-│              Area: 120000                │
-└─────────────────────────────────────────┘
+
+### Methods
+
+| Method | Description | Returns |
+|--------|-------------|---------|
+| `get_frame()` | Get frame dengan semua processing | `(frame, state_dict)` |
+| `toggle_yolo()` | Toggle YOLO on/off | `bool` |
+| `trigger_loop_detector(frame)` | Trigger loop detector (FASE 3) | - |
+| `trigger_tap_card(frame)` | Trigger tap card (FASE 4) | - |
+| `reset_tracking()` | Reset semua tracking | - |
+| `release()` | Release camera resources | - |
+
+### State Dict Keys
+
+```python
+state = {
+    'detections': [...],              # List of detections
+    'tracked_object_id': 'PERSON_1',  # ID object yang di-track
+    'status': 'approaching',          # approaching/moving_away/stable
+    'siaga_active': True,             # SIAGA status
+    'siaga_cleared': False,           # SIAGA cleared status
+    'parking_phase': ParkingPhase.FASE1_SIAGA,
+    'parking_session_active': True,
+    'session_success_time': 1234567890.123,  # Timestamp saat success
+    'fps': 30,
+    'yolo_enabled': True,
+    'clean_ui': False,
+}
+```
+
+### ParkingPhase Enum
+
+```python
+from yolo_widget import ParkingPhase
+
+ParkingPhase.NO_VEHICLE      # Tidak ada kendaraan
+ParkingPhase.FASE1_SIAGA     # SIAGA aktif, capture 3 frame
+ParkingPhase.FASE2_TETAP     # Kendaraan berhenti, capture 5 frame
+ParkingPhase.FASE3_LOOP      # Menunggu tombol loop detector
+ParkingPhase.FASE4_TAP       # Menunggu tombol tap card
+ParkingPhase.PREVIEW_READY   # Semua fase selesai
 ```
 
 ---
 
 ## ⚙️ Configuration
 
-Edit di `main.py`:
+Default config bisa di-override via constructor:
 
 ```python
-# Camera ID (0 = default webcam)
-camera_id=0
+config = {
+    'CLEAN_UI': False,              # Hide UI elements
+    'YOLO_SKIP_FRAMES': 2,          # Frame skipping untuk performance
+    'YOLO_CONFIDENCE_THRESHOLD': 0.5,
+    'TARGET_CLASSES': [0],          # 0=person, 2=car, 3=motorcycle, dst
+    'MAX_HISTORY': 30,              # History untuk trend analysis
+    'SIAGA_FRAME_THRESHOLD': 3,     # Frame untuk trigger SIAGA
+    'SIAGA_HOLD_TIME': 3.0,         # Detik SIAGA hold setelah object hilang
+    'FASE1_TARGET': 3,              # Frame target FASE 1
+    'FASE2_TARGET': 5,              # Frame target FASE 2
+    'FASE3_TARGET': 3,              # Frame target FASE 3
+    'FASE4_TARGET': 3,              # Frame target FASE 4
+    'SHOW_FPS': True,               # Show FPS counter
+}
 
-# Confidence threshold (0.0 - 1.0)
-confidence_threshold=0.5
-
-# Target classes (COCO dataset)
-# 0 = person, 2 = car, 3 = motorcycle, etc.
-target_classes = [0]  # Track person only
-
-# History length (frames)
-max_history=30
-
-# Movement threshold (%)
-movement_threshold=10  # 10% change
+widget = YOLOWidget(config=config)
 ```
 
 ---
 
-## 🧪 Testing
+## 🎹 Keyboard Controls
 
-### Test 1: Basic Detection
-```bash
-python main.py
-```
-- Pastikan kamera terdeteksi
-- Lihat FPS counter (should be > 15 FPS)
-- Test dengan orang bergerak mendekat/menjauh
+| Key | Function |
+|-----|----------|
+| `q` / `ESC` | Quit aplikasi |
+| `y` | Toggle YOLO on/off |
+| `r` | Reset tracking |
+| `l` | Trigger Loop Detector (FASE 3) |
+| `t` | Trigger Tap Card (FASE 4) |
 
-### Test 2: Snapshot
-```
-Tekan 'S' saat object terdeteksi
-File akan tersimpan: snapshot_YYYYMMDD_HHMMSS.jpg
-```
+---
 
-### Test 3: Threshold Adjustment
+## 📝 Parking Session Flow
+
 ```
-Tekan '+' untuk meningkatkan threshold (deteksi lebih strict)
-Tekan '-' untuk menurunkan threshold (deteksi lebih sensitive)
+1. NO_VEHICLE → Tunggu object terdeteksi
+2. FASE1_SIAGA → Object mendekat, capture 3 frame
+3. FASE2_TETAP → Kendaraan berhenti, capture 5 frame
+4. FASE3_LOOP → Trigger loop detector, capture 3 frame
+5. FASE4_TAP → Trigger tap card, capture 3 frame
+6. PREVIEW_READY → Session selesai
+   - Tampil "Terimakasih" hijau selama 2 detik
+   - Auto-reset ke NO_VEHICLE
 ```
 
 ---
 
-## 📝 COCO Object Classes
+## ✨ Fitur "Terimakasih"
 
-YOLOv8 trained pada COCO dataset (80 classes):
+Saat parking session berhasil selesai (semua 4 fase complete):
 
-| ID | Class | ID | Class |
-|----|-------|----|-------|
-| 0 | person | 1 | bicycle |
-| 2 | car | 3 | motorcycle |
-| 4 | airplane | 5 | bus |
-| 6 | train | 7 | truck |
-| ... | ... | ... | ... |
+1. **Teks berubah**: "Selamat Datang" → "Terimakasih"
+2. **Warna**: Hitam → Hijau
+3. **Durasi**: 2 detik
+4. **Auto-reset**: Kembali ke "Selamat Datang" setelah 2 detik
 
-Full list: https://cocodataset.org/#home
+**Signal success** bisa dilihat dari:
+- Log terminal: `[✅ SESSION COMPLETE] Parking berhasil!`
+- State dict: `session_success_time` (timestamp)
 
 ---
 
-## 🔧 Troubleshooting
+## ⚠️ Troubleshooting
 
-### Camera tidak terdeteksi
+### Error: Module not found
+
+```python
+# Pastikan folder yolo_widget sejajar dengan script Anda
+# Atau tambahkan ke path:
+import sys
+sys.path.insert(0, '/path/to/yolo_widget')
+from yolo_widget import YOLOWidget
+```
+
+### Error: Camera not opened
+
 ```python
 # Coba camera ID lain
-detector = RealTimeDistanceDetector(camera_id=1)  # atau 2, 3, dst
+widget = YOLOWidget(camera_id=1)  # atau 2, 3, ...
+
+# Check camera permission di Windows Settings
 ```
 
-### FPS terlalu rendah
+### Error: Model not found
+
 ```python
-# Gunakan model lebih kecil (sudah default: yolov8n.pt)
-# atau turunkan resolusi
-self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
-self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
+# Pastikan yolov8n.pt ada di folder yolo_widget
+# File harus berukuran ~6.5MB
+
+# Atau specify custom path (perlu modifikasi widget_wrapper.py)
 ```
 
-### Deteksi tidak akurat
-- Tingkatkan confidence threshold (`+` key)
-- Pastikan pencahayaan cukup
-- Object harus terlihat jelas di frame
+### Detection lambat
 
-### Status tidak berubah (stuck di "TETAP")
-- Object bergerak terlalu lambat → tunggu lebih lama
-- Object terlalu jauh → dekati kamera
-- History terlalu panjang → kurangi `max_history`
-
----
-
-## 📈 Performance
-
-| Model | Speed (FPS) | Accuracy | Size |
-|-------|-------------|----------|------|
-| **YOLOv8n** (default) | ~30 FPS | Good | 3.2 MB |
-| YOLOv8s | ~20 FPS | Better | 11 MB |
-| YOLOv8m | ~10 FPS | Best | 26 MB |
-
-*Tested on: Intel i5, 8GB RAM, Integrated GPU*
-
----
-
-## 🎥 Use Cases
-
-- 🏠 **Home Security** - Deteksi orang mendekat ke rumah
-- 🚪 **Door Entry** - Monitoring orang masuk/keluar
-- 🅿️ **Parking Monitor** - Deteksi mobil mendekat/menjauh
-- 🚶 **Pedestrian Tracking** - Analisis pergerakan pejalan kaki
-- 📦 **Warehouse** - Monitoring forklift/worker movement
-
----
-
-## 📚 References
-
-- **YOLOv8:** https://github.com/ultralytics/ultralytics
-- **COCO Dataset:** https://cocodataset.org/
-- **OpenCV:** https://opencv.org/
+```python
+# Increase frame skipping
+config = {'YOLO_SKIP_FRAMES': 5}  # Skip lebih banyak frame
+widget = YOLOWidget(config=config)
+```
 
 ---
 
 ## 📄 License
 
-Apache License 2.0
+Widget ini adalah refactored version dari `non_widget/main.py`.
 
 ---
 
-## 🙏 Credits
+## 🆘 Support
 
-- **Ultralytics** - YOLOv8
-- **OpenCV Team** - Computer Vision Library
-- **COCO Dataset** - Object Detection Dataset
+Untuk contoh lengkap, lihat file `app.py` di folder ini.
 
----
+**Quick Start:**
+```bash
+python app.py
+```
 
-**Created:** 2026-03-07  
-**Version:** 1.0.0  
-**Folder:** V6_Deteksi_Object_Mendekat
+**Controls:**
+- `q` - Quit
+- `y` - Toggle YOLO
+- `r` - Reset tracking
+- `l` - Loop Detector (FASE 3)
+- `t` - Tap Card (FASE 4)

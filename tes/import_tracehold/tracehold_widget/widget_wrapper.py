@@ -167,6 +167,11 @@ class TraceHoldWidget:
         self.fg_mask = None
         self.fg_mask_bg = None
         self.fg_mask_diff = None
+        
+        # Preview window state
+        self.show_preview = False
+        self.preview_mog2 = None
+        self.prev_frame_preview = None
 
     def _init_background(self):
         """Initialize background (MOG2 atau Static)."""
@@ -177,10 +182,17 @@ class TraceHoldWidget:
                 varThreshold=self.bg_subtractor_var_threshold,
                 detectShadows=False
             )
+            # Preview MOG2 (terpisah dari main, untuk preview window)
+            self.preview_mog2 = cv2.createBackgroundSubtractorMOG2(
+                history=self.bg_subtractor_history,
+                varThreshold=self.bg_subtractor_var_threshold,
+                detectShadows=False
+            )
             self.background_reference = None
         else:
             # Static mode - capture background
             self.bg_subtractor = None
+            self.preview_mog2 = None
             self.background_reference = self._capture_background()
 
     def _capture_background(self):
@@ -233,6 +245,9 @@ class TraceHoldWidget:
         roi_edges = edges_dilated[self.roi_y:self.roi_y+self.roi_height, 
                                    self.roi_x:self.roi_x+self.roi_width]
         roi_edge_pixels = cv2.countNonZero(roi_edges)
+        
+        # Simpan roi_edge_pixels untuk preview
+        self.roi_edge_pixels = roi_edge_pixels
         
         # Detection based on mode (SAMA PERSIS dengan main.py)
         if self.auto_reset_state:
@@ -575,6 +590,153 @@ class TraceHoldWidget:
     def reset_background(self):
         """Manual background reset (SAMA PERSIS dengan main.py tombol 'r')."""
         self._reset_background()
+
+    def toggle_preview(self):
+        """Toggle preview window (SAMA PERSIS dengan main.py tombol 'u')."""
+        self.show_preview = not self.show_preview
+        return self.show_preview
+
+    def draw_preview(self, frame):
+        """Draw preview window (SAMA PERSIS dengan main.py)."""
+        if not self.show_preview:
+            return
+        
+        # Preprocessing untuk preview
+        preview_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        preview_blurred = cv2.GaussianBlur(preview_gray, self.blur_kernel_size, 0)
+        
+        # Convert ke BGR untuk display
+        current_bgr = cv2.cvtColor(preview_blurred, cv2.COLOR_GRAY2BGR)
+        
+        # Edge detection untuk preview
+        preview_edges = cv2.Canny(preview_blurred, 50, 150)
+        edges_bgr = cv2.cvtColor(preview_edges, cv2.COLOR_GRAY2BGR)
+        
+        # Highlight ROI di edge image
+        edges_roi_color = edges_bgr.copy()
+        cv2.rectangle(edges_roi_color, (self.roi_x, self.roi_y), 
+                     (self.roi_x + self.roi_width, self.roi_y + self.roi_height), (0, 255, 0), 2)
+        
+        if self.auto_reset_state:
+            # MOG2 Mode
+            fg_mask_preview = self.preview_mog2.apply(preview_blurred, learningRate=0.005)
+            _, fg_mask_preview = cv2.threshold(fg_mask_preview, 50, 255, cv2.THRESH_BINARY)
+            
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+            fg_mask_preview = cv2.morphologyEx(fg_mask_preview, cv2.MORPH_OPEN, kernel)
+            fg_mask_preview = cv2.dilate(fg_mask_preview, kernel, iterations=2)
+            
+            mask_bgr = cv2.cvtColor(fg_mask_preview, cv2.COLOR_GRAY2BGR)
+            
+            # Resize
+            target_height = 200
+            h, w = preview_blurred.shape
+            scale = target_height / h
+            new_size = (int(w * scale), int(h * scale))
+            
+            current_resized = cv2.resize(current_bgr, new_size)
+            edges_resized = cv2.resize(edges_roi_color, new_size)
+            mask_resized = cv2.resize(mask_bgr, new_size)
+            
+            # Add labels
+            cv2.putText(current_resized, "GRAYSCALE", (10, 30),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            cv2.putText(edges_resized, f"CANNY EDGE (ROI: {self.roi_edge_pixels if hasattr(self, 'roi_edge_pixels') else 0}px)", (10, 30),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+            cv2.putText(mask_resized, "MOG2 FOREGROUND", (10, 30),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+            
+            # Stack
+            combined = np.hstack([current_resized, edges_resized, mask_resized])
+            
+            # Info
+            info_text = [
+                f"Mode: MOG2 (Adaptive) - REALTIME",
+                f"Resolution: {w}x{h}",
+                f"Foreground pixels: {cv2.countNonZero(fg_mask_preview)}",
+                "",
+                "Press 'u' to close preview"
+            ]
+        else:
+            # Static BG Mode
+            bg_diff = cv2.absdiff(self.background_reference, preview_blurred)
+            _, mask_bg = cv2.threshold(bg_diff, self.bg_diff_threshold, 255, cv2.THRESH_BINARY)
+            
+            if self.prev_frame_preview is not None:
+                frame_diff = cv2.absdiff(self.prev_frame_preview, preview_blurred)
+                _, mask_diff = cv2.threshold(frame_diff, self.frame_diff_threshold, 255, cv2.THRESH_BINARY)
+            else:
+                mask_diff = np.zeros_like(mask_bg)
+            
+            self.prev_frame_preview = preview_blurred.copy()
+            
+            fg_mask_preview = cv2.bitwise_or(mask_bg, mask_diff)
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+            fg_mask_preview = cv2.morphologyEx(fg_mask_preview, cv2.MORPH_OPEN, kernel)
+            fg_mask_preview = cv2.dilate(fg_mask_preview, kernel, iterations=3)
+            
+            # Convert masks to BGR
+            bg_bgr = cv2.cvtColor(self.background_reference, cv2.COLOR_GRAY2BGR)
+            mask_bg_bgr = cv2.cvtColor(mask_bg, cv2.COLOR_GRAY2BGR)
+            mask_diff_bgr = cv2.cvtColor(mask_diff, cv2.COLOR_GRAY2BGR)
+            mask_combined_bgr = cv2.cvtColor(fg_mask_preview, cv2.COLOR_GRAY2BGR)
+            
+            # Resize
+            target_height = 150
+            h, w = preview_blurred.shape
+            scale = target_height / h
+            new_size = (int(w * scale), int(h * scale))
+            
+            current_resized = cv2.resize(current_bgr, new_size)
+            bg_resized = cv2.resize(bg_bgr, new_size)
+            mask_bg_resized = cv2.resize(mask_bg_bgr, new_size)
+            mask_diff_resized = cv2.resize(mask_diff_bgr, new_size)
+            mask_combined_resized = cv2.resize(mask_combined_bgr, new_size)
+            
+            # Add labels
+            cv2.putText(current_resized, "CURRENT", (10, 30),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+            cv2.putText(bg_resized, "BG REFERENCE", (10, 30),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+            cv2.putText(mask_bg_resized, f"BG DIFF (>{self.bg_diff_threshold})", (10, 30),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            cv2.putText(mask_diff_resized, f"FRAME DIFF (>{self.frame_diff_threshold})", (10, 30),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            cv2.putText(mask_combined_resized, "COMBINED", (10, 30),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+            
+            # Stack
+            combined = np.hstack([
+                current_resized,
+                bg_resized,
+                mask_bg_resized,
+                mask_diff_resized,
+                mask_combined_resized
+            ])
+            
+            # Info
+            info_text = [
+                f"Mode: Static Background - REALTIME",
+                f"Resolution: {w}x{h}",
+                f"BG Threshold: {self.bg_diff_threshold} | Frame Threshold: {self.frame_diff_threshold}",
+                f"Combined mask pixels: {cv2.countNonZero(fg_mask_preview)}",
+                "",
+                "Press 'u' to close preview"
+            ]
+        
+        # Buat panel info
+        info_height = 140
+        info_panel = np.zeros((info_height, combined.shape[1], 3), dtype=np.uint8)
+        for i, text in enumerate(info_text):
+            color = (200, 200, 200) if text else (100, 100, 100)
+            cv2.putText(info_panel, text, (10, 30 + i * 30),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 1)
+        
+        # Gabungkan
+        full_preview = np.vstack([combined, info_panel])
+        
+        # Tampilkan preview window
+        cv2.imshow('Threshold & Grayscale Preview', full_preview)
 
     def release(self):
         """Release resources."""

@@ -140,6 +140,7 @@ class ResponsiveApp:
         print("  - 'q' / ESC: Quit")
         print("  - 'r': Reset background")
         print("  - 'o': Toggle auto reset")
+        print("  - 'u': Toggle preview window")
         print("="*60 + "\n")
 
         cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
@@ -169,6 +170,10 @@ class ResponsiveApp:
 
                 # Show
                 cv2.imshow(self.window_name, frame)
+                
+                # Draw preview jika aktif
+                if tracehold_frame is not None:
+                    self.widget.draw_preview(tracehold_frame)
 
                 # Handle keyboard
                 key = cv2.waitKey(10) & 0xFF
@@ -180,6 +185,16 @@ class ResponsiveApp:
                 elif key == ord('o'):
                     new_mode = self.widget.toggle_auto_reset()
                     print(f"[{'✅' if new_mode else '❌'}] Auto reset: {'ON' if new_mode else 'OFF'}")
+                elif key == ord('u'):
+                    preview_shown = self.widget.toggle_preview()
+                    if preview_shown:
+                        print(f"\n[PREVIEW] ON - Press 'u' again to close")
+                    else:
+                        print(f"\n[PREVIEW] OFF")
+                        try:
+                            cv2.destroyWindow('Threshold & Grayscale Preview')
+                        except:
+                            pass
 
         except Exception as e:
             print(f"\n[ERROR] {e}")

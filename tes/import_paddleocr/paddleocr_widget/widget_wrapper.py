@@ -13,6 +13,14 @@ import numpy as np
 from pathlib import Path
 from datetime import datetime
 import threading
+from dotenv import load_dotenv
+
+# Load .env file (SAMA PERSIS dengan main.py non_widget)
+load_dotenv()
+
+# Also load .env from widget directory (fallback)
+_widget_dir = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(_widget_dir, '.env'))
 
 # Import PaddleOCR
 try:
@@ -49,21 +57,33 @@ class PaddleOCRWidget:
     def __init__(self, config=None):
         """
         Initialize PaddleOCR Widget.
-        
+
         Args:
             config: Configuration dict (optional)
         """
         self.config = config or {}
+
+        # Load config from .env first (SAMA PERSIS dengan main.py non_widget)
+        # Then override with config dict if provided
         
-        # Load config
-        self.lang = self.config.get('OCR_LANG', 'id')
-        self.conf_threshold = float(self.config.get('CONF_THRESHOLD', '0.5'))
-        self.delete_space = self.config.get('DELETE_SPACE', 'False') == 'True'
-        self.group_by_line = self.config.get('GROUP_BY_LINE', 'False') == 'True'
-        self.line_tolerance = int(self.config.get('LINE_TOLERANCE', '10'))
-        self.hide_popup_unknown_exception = self.config.get('HIDE_POPUP_UNKNOWN_EXCEPTION', 'False') == 'True'
-        self.output_dir = self.config.get('OUTPUT_DIR', 'output')
+        # OCR Settings
+        self.lang = self.config.get('OCR_LANG', os.getenv('OCR_LANG', 'id'))
+        self.conf_threshold = float(self.config.get('CONF_THRESHOLD', os.getenv('CONF_THRESHOLD', '0.5')))
         
+        # Text Processing Settings
+        self.delete_space = self.config.get('DELETE_SPACE', os.getenv('DELETE_SPACE', 'False')) == 'True'
+        self.group_by_line = self.config.get('GROUP_BY_LINE', os.getenv('GROUP_BY_LINE', 'False')) == 'True'
+        self.line_tolerance = int(self.config.get('LINE_TOLERANCE', os.getenv('LINE_TOLERANCE', '10')))
+        
+        # Error Handling
+        self.hide_popup_unknown_exception = self.config.get(
+            'HIDE_POPUP_UNKNOWN_EXCEPTION',
+            os.getenv('HIDE_POPUP_UNKNOWN_EXCEPTION', 'False')
+        ) == 'True'
+        
+        # Output Settings
+        self.output_dir = self.config.get('OUTPUT_DIR', os.getenv('OUTPUT_DIR', 'output'))
+
         # Create output directory
         os.makedirs(self.output_dir, exist_ok=True)
         

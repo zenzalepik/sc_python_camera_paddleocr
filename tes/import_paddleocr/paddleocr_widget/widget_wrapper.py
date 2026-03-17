@@ -160,6 +160,16 @@ class PaddleOCRWidget:
             elapsed = (datetime.now() - start_time).total_seconds()
             print(f"[{datetime.now().strftime('%H:%M:%S')}] [OCR] Completed in {elapsed:.2f}s")
             
+            # RE-CREATE model setelah predict (biar state fresh untuk predict berikutnya)
+            # Ini penting karena PaddleOCR model tidak thread-safe
+            print("[INFO] Re-creating PaddleOCR model for fresh state...")
+            self.ocr = PaddleOCR(
+                lang=self.lang,
+                text_detection_model_name='PP-OCRv5_mobile_det',
+                text_recognition_model_name='PP-OCRv5_mobile_rec',
+            )
+            print("[OK] PaddleOCR model re-created")
+            
             # Parse result
             texts = []
             if result and len(result) > 0:

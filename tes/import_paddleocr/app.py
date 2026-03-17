@@ -79,20 +79,27 @@ class ResponsiveApp:
 
         # Initialize PaddleOCR widget
         self.widget = PaddleOCRWidget()
-        
+
         # Current image
         self.current_image = None
         self.current_image_path = None
-        
+
         # Mouse callback
         self.mouse_callback = None
-        
+
         # Loading state
         self.is_loading = False
         self.loading_start_time = 0
         self.ocr_result = None
         self.ocr_error = None
         self.ocr_thread = None
+        
+        # STATE FLAGS - untuk tracking progress
+        self.widget_initialized = True  # Widget sudah init di __init__
+        self.image_loaded = False
+        self.ocr_processing = False
+        self.ocr_complete = False
+        self.cooldown_complete = True  # Ready dari awal
 
     def draw_left_frame(self, frame, width, height):
         """Draw frame kiri dengan teks 'Selamat Datang' + 4 tombol + hasil deteksi."""
@@ -402,89 +409,170 @@ class ResponsiveApp:
             ("Image files", "*.jpg *.jpeg *.png *.bmp *.tiff *.webp"),
             ("All files", "*.*")
         ]
-        
+
         filepath = filedialog.askopenfilename(
             title="Select Image",
             filetypes=filetypes
         )
-        
+
         root.destroy()
-        
+
         if filepath:
             self.current_image = cv2.imread(filepath)
             self.current_image_path = filepath
+            self.image_loaded = True  # Set flag
             print(f"[OK] Loaded: {filepath}")
             return True
-        
+
         return False
 
     def detect_text(self):
-        """Detect text dalam gambar (run di thread terpisah)."""
+        """Detect text dengan STATE MACHINE - proper sequencing + DETAILED LOGS."""
+        
+        print(f"\n{'='*60}")
+        print(f"[DETECT] Click detected at {time.strftime('%H:%M:%S')}")
+        print(f"{'='*60}")
+        
+        # === FASE 1: Check image loaded ===
+        print(f"[FASE 1] Checking image loaded...")
         if self.current_image is None:
+            print(f"[FASE 1] ❌ FAILED - No image loaded!")
             print("[WARNING] No image loaded. Open image first.")
             return
+        print(f"[FASE 1] ✓ PASSED - Image loaded: {self.current_image.shape}")
         
-        # Check jika sudah ada thread berjalan
+        # === FASE 2: Check thread tidak sedang jalan ===
+        print(f"[FASE 2] Checking OCR thread status...")
         if self.ocr_thread and self.ocr_thread.is_alive():
-            print("[WARNING] OCR already running!")
+            print(f"[FASE 2] ❌ FAILED - Thread still alive!")
+            print("[WARNING] OCR already running! Please wait until complete...")
+            print("[INFO] Click ignored to prevent race condition.")
             return
+        print(f"[FASE 2] ✓ PASSED - Thread not running")
         
-        # Set loading state
-        self.is_loading = True
-        self.loading_start_time = time.time()
+        # === FASE 3: Check cooldown sudah selesai ===
+        print(f"[FASE 3] Checking cooldown status...")
+        if not self.cooldown_complete:
+            print(f"[FASE 3] ❌ FAILED - Cooldown not complete!")
+            print("[WARNING] Cooldown not complete yet. Please wait...")
+            return
+        print(f"[FASE 3] ✓ PASSED - Cooldown complete")
+        
+        # === FASE 4: Clear state ===
+        print(f"[FASE 4] Clearing previous state...")
+        print(f"  - ocr_result: {self.ocr_result is not None}")
+        print(f"  - ocr_error: {self.ocr_error is not None}")
         self.ocr_result = None
         self.ocr_error = None
+        self.widget.clear_result()
+        print(f"[FASE 4] ✓ State cleared")
         
-        print("\n" + "="*60)
+        # === FASE 5: Set state flags ===
+        print(f"[FASE 5] Setting state flags...")
+        self.ocr_processing = True
+        self.ocr_complete = False
+        self.cooldown_complete = False
+        self.is_loading = True
+        self.loading_start_time = time.time()
+        print(f"  - ocr_processing: {self.ocr_processing}")
+        print(f"  - ocr_complete: {self.ocr_complete}")
+        print(f"  - cooldown_complete: {self.cooldown_complete}")
+        print(f"  - is_loading: {self.is_loading}")
+        print(f"[FASE 5] ✓ Flags set")
+        
+        print(f"\n{'='*60}")
         print("Running OCR...")
-        print("="*60)
+        print(f"{'='*60}")
         
-        # Start OCR thread
+        # === FASE 6: Start OCR thread ===
+        print(f"[FASE 6] Starting OCR thread...")
         self.ocr_thread = threading.Thread(target=self._ocr_worker)
         self.ocr_thread.daemon = True
         self.ocr_thread.start()
+        print(f"[FASE 6] ✓ Thread started (ID: {self.ocr_thread.ident})")
 
     def _ocr_worker(self):
-        """OCR worker thread."""
+        """OCR worker thread dengan DETAILED LOGS."""
+        thread_id = threading.current_thread().ident
+        print(f"\n{'='*60}")
+        print(f"[THREAD {thread_id}] Started at {time.strftime('%H:%M:%S')}")
+        print(f"{'='*60}")
+        
         try:
-            # Process dengan widget
-            frame_with_boxes, result = self.widget.process_frame(self.current_image)
-
-            # JANGAN update current_image!
-            # current_image harus tetap image asli untuk OCR berikutnya
-            # frame_with_boxes hanya untuk display sementara
+            # === FASE 1: Process OCR ===
+            print(f"[THREAD {thread_id}] [FASE 1] Starting OCR processing...")
+            print(f"[THREAD {thread_id}]   - Image shape: {self.current_image.shape}")
+            print(f"[THREAD {thread_id}]   - Image dtype: {self.current_image.dtype}")
             
-            # Get results
+            frame_with_boxes, result = self.widget.process_frame(self.current_image)
+            
+            print(f"[THREAD {thread_id}] [FASE 1] ✓ OCR processing complete")
+            print(f"[THREAD {thread_id}]   - Result type: {type(result)}")
+            print(f"[THREAD {thread_id}]   - Result keys: {result.keys() if isinstance(result, dict) else 'N/A'}")
+
+            # === FASE 2: Get results ===
+            print(f"[THREAD {thread_id}] [FASE 2] Getting results...")
             texts = self.widget.get_texts()
-
-            # Get detected plate
             plate = self.widget.get_detected_plate()
+            
+            print(f"[THREAD {thread_id}] [FASE 2] ✓ Results retrieved")
+            print(f"[THREAD {thread_id}]   - Text count: {len(texts)}")
+            print(f"[THREAD {thread_id}]   - Plate: {plate}")
 
+            # === FASE 3: Save results ===
+            print(f"[THREAD {thread_id}] [FASE 3] Saving results...")
             self.ocr_result = {
                 'texts': texts,
                 'count': len(texts),
                 'plate': plate,
-                'display_frame': frame_with_boxes  # Simpan untuk display
+                'display_frame': frame_with_boxes
             }
+            print(f"[THREAD {thread_id}] [FASE 3] ✓ Results saved")
+            print(f"[THREAD {thread_id}]   - ocr_result keys: {self.ocr_result.keys()}")
 
             print(f"\n[SUCCESS] Detected {len(texts)} text(s):")
             for i, text in enumerate(texts, 1):
                 print(f"  [{i}] {text}")
 
-            # Print plate if found
             if plate:
                 print(f"\n[🚗 PLATE DETECTED] {plate}")
 
             print("\n" + "="*60)
+            
+            # === FASE 4: Set OCR complete flag ===
+            print(f"[THREAD {thread_id}] [FASE 4] Setting ocr_complete=True...")
+            self.ocr_complete = True
+            print(f"[THREAD {thread_id}] [FASE 4] ✓ Flag set")
 
         except Exception as e:
+            import traceback
             self.ocr_error = str(e)
-            print(f"\n[ERROR] OCR failed: {e}")
+            error_traceback = traceback.format_exc()
+            print(f"\n{'='*60}")
+            print(f"[THREAD {thread_id}] [ERROR] OCR failed!")
+            print(f"[THREAD {thread_id}]   - Error type: {type(e).__name__}")
+            print(f"[THREAD {thread_id}]   - Error message: {e}")
+            print(f"[THREAD {thread_id}]   - Traceback:\n{error_traceback}")
+            print(f"{'='*60}")
         finally:
-            # Clear loading state
+            # === FASE 5: Clear processing flag ===
             elapsed = time.time() - self.loading_start_time
             self.is_loading = False
-            print(f"[INFO] OCR completed in {elapsed:.2f}s")
+            self.ocr_processing = False
+            
+            print(f"\n{'='*60}")
+            print(f"[THREAD {thread_id}] [FASE 5] Clearing processing flags...")
+            print(f"[THREAD {thread_id}]   - Elapsed time: {elapsed:.2f}s")
+            print(f"[THREAD {thread_id}]   - ocr_processing: {self.ocr_processing}")
+            print(f"[THREAD {thread_id}]   - is_loading: {self.is_loading}")
+            print(f"[THREAD {thread_id}] [FASE 5] ✓ Flags cleared")
+            
+            # === FASE 6: Set cooldown complete flag (NO DELAY!) ===
+            print(f"[THREAD {thread_id}] [FASE 6] Setting cooldown_complete=True...")
+            self.cooldown_complete = True
+            print(f"[THREAD {thread_id}] [FASE 6] ✓ Flag set")
+            print(f"[THREAD {thread_id}] Cooldown complete - ready for next detection")
+            print(f"{'='*60}")
 
     def export_result(self):
         """Export hasil OCR."""

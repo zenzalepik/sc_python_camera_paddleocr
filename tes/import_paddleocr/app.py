@@ -449,32 +449,34 @@ class ResponsiveApp:
         try:
             # Process dengan widget
             frame_with_boxes, result = self.widget.process_frame(self.current_image)
-            
-            # Update current image dengan bounding boxes
-            self.current_image = frame_with_boxes
+
+            # JANGAN update current_image!
+            # current_image harus tetap image asli untuk OCR berikutnya
+            # frame_with_boxes hanya untuk display sementara
             
             # Get results
             texts = self.widget.get_texts()
-            
+
             # Get detected plate
             plate = self.widget.get_detected_plate()
-            
+
             self.ocr_result = {
                 'texts': texts,
                 'count': len(texts),
-                'plate': plate  # Store plate number
+                'plate': plate,
+                'display_frame': frame_with_boxes  # Simpan untuk display
             }
-            
+
             print(f"\n[SUCCESS] Detected {len(texts)} text(s):")
             for i, text in enumerate(texts, 1):
                 print(f"  [{i}] {text}")
-            
+
             # Print plate if found
             if plate:
                 print(f"\n[🚗 PLATE DETECTED] {plate}")
-            
+
             print("\n" + "="*60)
-            
+
         except Exception as e:
             self.ocr_error = str(e)
             print(f"\n[ERROR] OCR failed: {e}")
@@ -569,9 +571,12 @@ class ResponsiveApp:
                 # Create frame
                 frame = np.zeros((self.window_height, self.window_width, 3), dtype=np.uint8)
 
-                # Draw UI
-                if self.current_image is not None:
-                    # Show image dengan/without bounding boxes
+                # Draw UI - PRIORITAS: display_frame (dengan bounding box) jika ada
+                if self.ocr_result and 'display_frame' in self.ocr_result:
+                    # Tampilkan frame dengan bounding box (dari hasil OCR terakhir)
+                    ocr_frame = self.ocr_result['display_frame']
+                elif self.current_image is not None:
+                    # Tampilkan image asli (tanpa bounding box)
                     ocr_frame = self.current_image
                 else:
                     ocr_frame = None

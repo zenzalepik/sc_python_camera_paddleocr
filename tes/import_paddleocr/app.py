@@ -143,34 +143,34 @@ class ResponsiveApp:
         self.draw_result_panel(frame, width, height, start_y + button_height)
 
     def draw_plate_panel(self, frame, width, height, y_start):
-        """Draw panel plat nomor terdeteksi."""
-        # Get detected plate from ocr_result or widget
-        plate = None
+        """Draw panel plat nomor terdeteksi - WITH CLEAR CHECK."""
+        # Check jika data sudah di-clear
+        if not self.image_loaded or self.ocr_result is None:
+            return  # Don't draw if cleared
         
+        # Get detected plate from ocr_result
+        plate = None
         if self.ocr_result and 'plate' in self.ocr_result:
             plate = self.ocr_result['plate']
-        
-        if plate is None:
-            plate = self.widget.get_detected_plate()
-        
+
         if plate is None:
             return  # Don't draw if no plate detected
-        
+
         panel_y = y_start + 20
         margin = 10
-        panel_height = 70  # Increased from 50 to 70 for taller panel
-        
+        panel_height = 70
+
         # Draw panel background (green gradient)
-        cv2.rectangle(frame, (margin, panel_y), 
+        cv2.rectangle(frame, (margin, panel_y),
                      (width - margin, panel_y + panel_height), (0, 100, 0), -1)
-        cv2.rectangle(frame, (margin, panel_y), 
+        cv2.rectangle(frame, (margin, panel_y),
                      (width - margin, panel_y + panel_height), (0, 255, 0), 2)
-        
+
         # Draw title (top line)
         title = "Plat Nomor Terdeteksi:"
         cv2.putText(frame, title, (margin + 15, panel_y + 25),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
-        
+
         # Draw plate number (large, bold, centered) - second line
         plate_text = plate.upper()
         (plate_w, plate_h), _ = cv2.getTextSize(plate_text, cv2.FONT_HERSHEY_SIMPLEX, 1.5, 3)
@@ -575,31 +575,63 @@ class ResponsiveApp:
             print(f"{'='*60}")
 
     def export_result(self):
-        """Export hasil OCR."""
+        """Export hasil OCR - FULL EXPORT."""
+        print("\n[EXPORT] Exporting results...")
+        
+        # Check if we have results
         if self.widget.current_result is None:
             print("[WARNING] No result to export. Detect text first.")
             return
         
+        if len(self.widget.current_result.get('texts', [])) == 0:
+            print("[WARNING] No text detected. Nothing to export.")
+            return
+        
         # Export ke TXT
-        txt_path = self.widget.export_to_txt()
-        print(f"[OK] Exported to {txt_path}")
+        try:
+            txt_path = self.widget.export_to_txt()
+            print(f"[EXPORT] ✓ TXT exported to: {txt_path}")
+        except Exception as e:
+            print(f"[EXPORT] ✗ TXT export failed: {e}")
         
         # Export ke JSON
-        json_path = self.widget.export_to_json()
-        print(f"[OK] Exported to {json_path}")
+        try:
+            json_path = self.widget.export_to_json()
+            print(f"[EXPORT] ✓ JSON exported to: {json_path}")
+        except Exception as e:
+            print(f"[EXPORT] ✗ JSON export failed: {e}")
         
         # Copy to clipboard
         try:
             self.widget.copy_to_clipboard()
+            print(f"[EXPORT] ✓ Copied to clipboard")
         except Exception as e:
-            print(f"[WARNING] Copy to clipboard failed: {e}")
+            print(f"[EXPORT] ✗ Clipboard copy failed: {e}")
+        
+        print("[EXPORT] All exports completed")
 
     def clear_all(self):
-        """Clear semua."""
+        """Clear semua - FULL RESET."""
+        print("\n[CLEAR] Clearing all data...")
+        
+        # Clear app state
         self.current_image = None
         self.current_image_path = None
+        self.ocr_result = None
+        self.ocr_error = None
+        self.is_loading = False
+        
+        # Clear state flags
+        self.image_loaded = False
+        self.ocr_processing = False
+        self.ocr_complete = False
+        self.cooldown_complete = True  # Ready untuk detect berikutnya
+        
+        # Clear widget state
         self.widget.clear_result()
-        print("[OK] Cleared")
+        
+        print("[CLEAR] ✓ All data cleared")
+        print("[INFO] Ready for new image")
 
     def on_mouse_click(self, event, x, y, flags, param):
         """Handle mouse click events."""
@@ -646,10 +678,16 @@ class ResponsiveApp:
         self.tk_root = tk.Tk()
         self.tk_root.withdraw()  # Hide main tkinter window
 
-        # Create OpenCV window dengan mouse callback
+        # Create OpenCV window dengan mouse callback dan custom cursor
         cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(self.window_name, self.window_width, self.window_height)
         cv2.setMouseCallback(self.window_name, self.on_mouse_click)
+        
+        # Set custom cursor (default arrow cursor, bukan +)
+        try:
+            cv2.setWindowTitle(self.window_name, self.window_name)
+        except:
+            pass
 
         # Button click state
         button_clicked = [False] * len(self.buttons)
@@ -674,9 +712,9 @@ class ResponsiveApp:
                 # Show
                 cv2.imshow(self.window_name, frame)
 
-                # Handle keyboard
+                # Handle keyboard - ESC disabled, only 'q' can close
                 key = cv2.waitKey(10) & 0xFF
-                if key == ord('q') or key == 27:
+                if key == ord('q'):  # Only 'q' closes app, ESC (key 27) disabled
                     break
                 elif key == ord('o'):
                     self.open_image()

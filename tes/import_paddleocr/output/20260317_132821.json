@@ -1,0 +1,61 @@
+{
+  "texts": [
+    {
+      "text": "S2470BAB",
+      "confidence": 0.8862852454185486,
+      "bbox": [
+        [
+          153,
+          271
+        ],
+        [
+          621,
+          271
+        ],
+        [
+          621,
+          358
+        ],
+        [
+          153,
+          358
+        ]
+      ],
+      "original_text": "S2470BAB",
+      "avg_y": 307.5,
+      "x_min": 153,
+      "is_grouped": true
+    },
+    {
+      "text": "0924",
+      "confidence": 0.9390670657157898,
+      "bbox": [
+        [
+          412,
+          363
+        ],
+        [
+          622,
+          363
+        ],
+        [
+          622,
+          413
+        ],
+        [
+          412,
+          413
+        ]
+      ],
+      "original_text": "0924",
+      "avg_y": 387.5,
+      "x_min": 412,
+      "is_grouped": true
+    }
+  ],
+  "total_texts": 2,
+  "total_lines": 2,
+  "processing_time": 6.30669,
+  "image_path": null,
+  "timestamp": "2026-03-17T13:28:18.389457"
+}

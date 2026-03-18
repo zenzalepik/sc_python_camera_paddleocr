@@ -100,6 +100,10 @@ class ResponsiveApp:
         self.ocr_processing = False
         self.ocr_complete = False
         self.cooldown_complete = True  # Ready dari awal
+        
+        # Export success message flag
+        self.show_export_message = False
+        self.export_message_time = 0
 
     def draw_left_frame(self, frame, width, height):
         """Draw frame kiri dengan teks 'Selamat Datang' + 4 tombol + hasil deteksi."""
@@ -120,6 +124,33 @@ class ResponsiveApp:
 
         cv2.putText(frame, text, (text_x, text_y),
                    cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), thickness)
+
+        # Draw export success message (below "Selamat Datang")
+        if self.show_export_message:
+            # Check if 2 seconds have passed
+            if time.time() - self.export_message_time > 2:
+                self.show_export_message = False
+            else:
+                # Draw success message
+                msg = "✓ Export Berhasil!"
+                msg_font_scale = min(width, height) / 600
+                msg_thickness = max(1, int(msg_font_scale * 2))
+                
+                (msg_w, msg_h), _ = cv2.getTextSize(
+                    msg, cv2.FONT_HERSHEY_SIMPLEX, msg_font_scale, msg_thickness
+                )
+                msg_x = (width - msg_w) // 2
+                msg_y = text_y + 50  # Below "Selamat Datang"
+                
+                # Draw background rectangle for message
+                cv2.rectangle(frame, 
+                             (msg_x - 20, msg_y - msg_h - 10),
+                             (msg_x + msg_w + 20, msg_y + 10),
+                             (76, 175, 80),  # Green background
+                             -1)
+                
+                cv2.putText(frame, msg, (msg_x, msg_y),
+                           cv2.FONT_HERSHEY_SIMPLEX, msg_font_scale, (255, 255, 255), msg_thickness)
 
         # Draw buttons horizontal
         button_width = width // 6
@@ -576,39 +607,61 @@ class ResponsiveApp:
 
     def export_result(self):
         """Export hasil OCR - FULL EXPORT."""
-        print("\n[EXPORT] Exporting results...")
+        print("\n" + "="*60)
+        print("[EXPORT] === EXPORT BUTTON CLICKED ===")
+        print("="*60)
         
         # Check if we have results
         if self.widget.current_result is None:
-            print("[WARNING] No result to export. Detect text first.")
+            print("[WARNING] No result to export. Please click 'Detect' first.")
+            print("[EXPORT] Export cancelled - no data available")
             return
-        
+
         if len(self.widget.current_result.get('texts', [])) == 0:
             print("[WARNING] No text detected. Nothing to export.")
+            print("[EXPORT] Export cancelled - empty result")
             return
-        
+
+        # Get result info for logging
+        texts_count = len(self.widget.current_result.get('texts', []))
+        plate = self.widget.current_result.get('plate', 'N/A')
+        print(f"[EXPORT] Data available:")
+        print(f"  - Total texts: {texts_count}")
+        print(f"  - Detected plate: {plate}")
+        print(f"  - Processing time: {self.widget.current_result.get('processing_time', 'N/A')}s")
+        print()
+
         # Export ke TXT
+        print("[EXPORT] Exporting to TXT...")
         try:
             txt_path = self.widget.export_to_txt()
             print(f"[EXPORT] ✓ TXT exported to: {txt_path}")
         except Exception as e:
             print(f"[EXPORT] ✗ TXT export failed: {e}")
-        
+
         # Export ke JSON
+        print("[EXPORT] Exporting to JSON...")
         try:
             json_path = self.widget.export_to_json()
             print(f"[EXPORT] ✓ JSON exported to: {json_path}")
         except Exception as e:
             print(f"[EXPORT] ✗ JSON export failed: {e}")
-        
+
         # Copy to clipboard
+        print("[EXPORT] Copying to clipboard...")
         try:
             self.widget.copy_to_clipboard()
             print(f"[EXPORT] ✓ Copied to clipboard")
         except Exception as e:
             print(f"[EXPORT] ✗ Clipboard copy failed: {e}")
-        
-        print("[EXPORT] All exports completed")
+
+        print()
+        print("[EXPORT] ✓ All exports completed successfully")
+        print("="*60)
+
+        # Show success message for 2 seconds (below "Selamat Datang")
+        self.show_export_message = True
+        self.export_message_time = time.time()
 
     def clear_all(self):
         """Clear semua - FULL RESET."""

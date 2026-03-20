@@ -87,7 +87,8 @@ class ResponsiveApp:
         self.current_image = None
         self.current_image_path = None
         self.selected_index = -1  # Selected image in grid
-        self.grid_scroll_offset = 0  # Grid scroll position
+        self.grid_scroll_offset = 0  # Scroll offset untuk grid (pixels)
+        self.grid_rows = 0  # Jumlah rows untuk scroll calculation
 
         # Mouse callback
         self.mouse_callback = None
@@ -300,21 +301,57 @@ class ResponsiveApp:
         # Draw results
         texts = result.get('texts', [])
         plate = result.get('plate', None)
-        
+
         info_y = panel_start_y + 70
-        
-        # Text count
-        cv2.putText(frame, f"Total Texts: {len(texts)}", (margin + 15, info_y),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-        
-        # Plate info
+
+        # PLATE DETECTION PANEL - KESIMPULAN PLAT NOMOR!
         if plate:
-            cv2.putText(frame, f"Plate: {plate}", (margin + 200, info_y),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
-        
-        # Draw text list
-        list_y = info_y + 40
-        line_height = 25
+            # Draw plate panel with special styling
+            plate_panel_y = info_y + 20  # Lebih bawah
+            plate_panel_height = 100  # Lebih tinggi
+
+            # Background green
+            cv2.rectangle(frame, (margin + 10, plate_panel_y),
+                         (width - margin - 10, plate_panel_y + plate_panel_height),
+                         (0, 80, 0), -1)
+            cv2.rectangle(frame, (margin + 10, plate_panel_y),
+                         (width - margin - 10, plate_panel_y + plate_panel_height),
+                         (0, 255, 0), 3)
+
+            # Title
+            title = "PLAT NOMOR TERDETEKSI:"
+            cv2.putText(frame, title, (margin + 20, plate_panel_y + 35),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+
+            # Plate number (large, bold)
+            plate_text = plate.upper()
+            (plate_w, plate_h), _ = cv2.getTextSize(plate_text, cv2.FONT_HERSHEY_SIMPLEX, 2.5, 4)
+            plate_x = (width - plate_w) // 2
+            cv2.putText(frame, plate_text, (plate_x, plate_panel_y + 80),
+                       cv2.FONT_HERSHEY_SIMPLEX, 2.5, (0, 255, 255), 4)
+
+            # Validation info
+            validation_y = plate_panel_y + plate_panel_height + 15
+            info_text = "✓ Plat nomor Indonesia valid"
+            cv2.putText(frame, info_text, (margin + 20, validation_y),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+
+            # Move text list FAR DOWN
+            list_y = validation_y + 40
+        else:
+            # No plate detected
+            cv2.putText(frame, "Plat Nomor: Tidak terdeteksi", (margin + 15, info_y),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (128, 128, 128), 1)
+
+            list_y = info_y + 40
+
+        # Text count - PASTI TERLIHAT
+        cv2.putText(frame, f"Total Texts: {len(texts)}", (margin + 15, list_y),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+
+        # Draw text list - DENGAN SPACING CUKUP
+        text_list_y = list_y + 50  # Lebih bawah lagi
+        line_height = 28  # Lebih tinggi
         max_display = min(len(texts), 15)
         
         for i in range(max_display):

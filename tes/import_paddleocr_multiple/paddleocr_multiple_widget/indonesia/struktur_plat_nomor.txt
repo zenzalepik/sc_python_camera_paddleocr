@@ -1,0 +1,35 @@
+STRUKTUR PLAT NOMOR KENDARAAN INDONESIA
+
+1. KODE WILAYAH (Huruf Awal)
+   - 1–2 huruf di depan.
+   - Menunjukkan daerah asal registrasi kendaraan.
+   - Contoh: B = Jakarta, D = Bandung, BK = Medan.
+
+2. NOMOR REGISTRASI (Angka)
+   - 1–4 digit angka.
+   - Nomor urut pendaftaran kendaraan.
+   - Contoh: 1, 12, 123, 1234.
+   - Angka 0 hanya muncul di bagian ini, tidak di kelompok huruf.
+
+3. KODE SERI (Huruf Akhir)
+   - 1–3 huruf di belakang.
+   - Digunakan untuk membedakan kendaraan dengan nomor sama.
+   - Contoh: A, AB, XYZ.
+   - Huruf O hanya muncul di bagian ini, tidak di kelompok angka.
+
+4. FORMAT UMUM
+   - [Huruf Wilayah] [Nomor Registrasi] [Huruf Seri]
+   - Contoh: B 1234 CD, BK 987 AB, D 12 A.
+
+5. VARIASI KHUSUS
+   - Plat Merah: kendaraan dinas pemerintah, warna dasar merah.
+   - Plat Kuning: kendaraan angkutan umum, warna dasar kuning.
+   - Plat Diplomatik: format khusus, biasanya angka + kode CD/CC.
+   - Plat Militer/Polisi: sistem tersendiri, tidak mengikuti pola sipil.
+
+6. CATATAN
+   - Angka 0 dan huruf O tidak bisa tertukar karena posisinya berbeda:
+     * Angka 0 hanya di kelompok angka.
+     * Huruf O hanya di kelompok huruf.
+   - Jumlah angka tidak selalu 4, bisa 1–4 digit.
+   - Jumlah huruf seri tidak selalu 3, bisa 0–3 huruf.

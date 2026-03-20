@@ -1,0 +1,149 @@
+{
+  "batch_results": [
+    {
+      "texts": [
+        {
+          "text": "S",
+          "confidence": 0.8982048630714417,
+          "bbox": [
+            [
+              153,
+              283
+            ],
+            [
+              198,
+              279
+            ],
+            [
+              203,
+              332
+            ],
+            [
+              158,
+              336
+            ]
+          ],
+          "original_text": "S",
+          "avg_y": 307.5,
+          "x_min": 153,
+          "is_grouped": true
+        },
+        {
+          "text": "2470",
+          "confidence": 0.9857676029205322,
+          "bbox": [
+            [
+              235,
+              271
+            ],
+            [
+              422,
+              277
+            ],
+            [
+              420,
+              347
+            ],
+            [
+              233,
+              340
+            ]
+          ],
+          "original_text": "2470",
+          "avg_y": 308.75,
+          "x_min": 233,
+          "is_grouped": true
+        },
+        {
+          "text": "BAB",
+          "confidence": 0.7748832702636719,
+          "bbox": [
+            [
+              441,
+              279
+            ],
+            [
+              621,
+              279
+            ],
+            [
+              621,
+              358
+            ],
+            [
+              441,
+              358
+            ]
+          ],
+          "original_text": "BAB",
+          "avg_y": 318.5,
+          "x_min": 441,
+          "is_grouped": true
+        },
+        {
+          "text": "09",
+          "confidence": 0.9557974338531494,
+          "bbox": [
+            [
+              414,
+              363
+            ],
+            [
+              539,
+              369
+            ],
+            [
+              537,
+              412
+            ],
+            [
+              412,
+              406
+            ]
+          ],
+          "original_text": "09",
+          "avg_y": 387.5,
+          "x_min": 412,
+          "is_grouped": true
+        },
+        {
+          "text": "24",
+          "confidence": 0.9223366975784302,
+          "bbox": [
+            [
+              519,
+              371
+            ],
+            [
+              622,
+              376
+            ],
+            [
+              620,
+              413
+            ],
+            [
+              517,
+              408
+            ]
+          ],
+          "original_text": "24",
+          "avg_y": 392.0,
+          "x_min": 517,
+          "is_grouped": true
+        }
+      ],
+      "total_texts": 5,
+      "total_lines": 5,
+      "processing_time": 0.0,
+      "image_path": "D:\\Github\\sc_python_camera_paddleocr\\tes\\import_paddleocr_multiple\\Screenshot_2026-03-07_142543.png",
+      "image_filename": "Screenshot_2026-03-07_142543.png",
+      "timestamp": "2026-03-18T17:29:27.229559",
+      "plate": null
+    }
+  ],
+  "total_images": 1,
+  "processed_count": 1,
+  "failed_count": 0,
+  "export_timestamp": "2026-03-18T17:29:28.255685"
+}

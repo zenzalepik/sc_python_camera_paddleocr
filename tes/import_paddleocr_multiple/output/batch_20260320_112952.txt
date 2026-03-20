@@ -1,0 +1,14 @@
+PaddleOCR Multiple Image Text Detection Result
+============================================================
+
+Image 1: N/A
+Timestamp: 2026-03-20T11:29:52.174069
+Processing Time: 7.60s
+Total Texts: 2
+============================================================
+
+[1] S2470BAB
+    Confidence: 0.8863
+[2] 0924
+    Confidence: 0.9391
+

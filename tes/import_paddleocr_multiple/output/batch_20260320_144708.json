@@ -1,0 +1,265 @@
+{
+  "batch_results": [
+    {
+      "texts": [
+        {
+          "text": "S2470BAB",
+          "confidence": 0.8862852454185486,
+          "bbox": [
+            [
+              153,
+              271
+            ],
+            [
+              621,
+              271
+            ],
+            [
+              621,
+              358
+            ],
+            [
+              153,
+              358
+            ]
+          ],
+          "original_text": "S2470BAB",
+          "avg_y": 307.5,
+          "x_min": 153,
+          "is_grouped": true
+        },
+        {
+          "text": "0924",
+          "confidence": 0.9390670657157898,
+          "bbox": [
+            [
+              412,
+              363
+            ],
+            [
+              622,
+              363
+            ],
+            [
+              622,
+              413
+            ],
+            [
+              412,
+              413
+            ]
+          ],
+          "original_text": "0924",
+          "avg_y": 387.5,
+          "x_min": 412,
+          "is_grouped": true
+        }
+      ],
+      "total_texts": 2,
+      "total_lines": 2,
+      "processing_time": 8.089121,
+      "image_path": null,
+      "timestamp": "2026-03-20T14:46:30.251402"
+    },
+    {
+      "texts": [
+        {
+          "text": "mMerdeka.com>×",
+          "confidence": 0.7874379754066467,
+          "bbox": [
+            [
+              20,
+              18
+            ],
+            [
+              563,
+              18
+            ],
+            [
+              563,
+              43
+            ],
+            [
+              20,
+              43
+            ]
+          ],
+          "original_text": "mMerdeka.com>×",
+          "avg_y": 32.5,
+          "x_min": 20,
+          "is_grouped": true
+        },
+        {
+          "text": "82833XKX",
+          "confidence": 0.9787873029708862,
+          "bbox": [
+            [
+              177,
+              171
+            ],
+            [
+              417,
+              171
+            ],
+            [
+              417,
+              239
+            ],
+            [
+              177,
+              239
+            ]
+          ],
+          "original_text": "82833XKX",
+          "avg_y": 198.5,
+          "x_min": 177,
+          "is_grouped": true
+        },
+        {
+          "text": "096×408",
+          "confidence": 0.83042311668396,
+          "bbox": [
+            [
+              532,
+              338
+            ],
+            [
+              584,
+              335
+            ],
+            [
+              584,
+              350
+            ],
+            [
+              533,
+              352
+            ]
+          ],
+          "original_text": "096 ×408",
+          "avg_y": 343.75,
+          "x_min": 532
+        }
+      ],
+      "total_texts": 3,
+      "total_lines": 2,
+      "processing_time": 7.875163,
+      "image_path": null,
+      "timestamp": "2026-03-20T14:46:38.142541"
+    },
+    {
+      "texts": [
+        {
+          "text": "Cintamobil",
+          "confidence": 0.990750789642334,
+          "bbox": [
+            [
+              50,
+              7
+            ],
+            [
+              126,
+              7
+            ],
+            [
+              126,
+              25
+            ],
+            [
+              50,
+              25
+            ]
+          ],
+          "original_text": "Cintamobil",
+          "avg_y": 16.0,
+          "x_min": 50
+        },
+        {
+          "text": "669",
+          "confidence": 0.9946427941322327,
+          "bbox": [
+            [
+              265,
+              229
+            ],
+            [
+              297,
+              232
+            ],
+            [
+              294,
+              256
+            ],
+            [
+              263,
+              253
+            ]
+          ],
+          "original_text": "669",
+          "avg_y": 242.5,
+          "x_min": 263
+        },
+        {
+          "text": "08-19",
+          "confidence": 0.8873322606086731,
+          "bbox": [
+            [
+              271,
+              249
+            ],
+            [
+              292,
+              252
+            ],
+            [
+              291,
+              263
+            ],
+            [
+              270,
+              260
+            ]
+          ],
+          "original_text": "08-19",
+          "avg_y": 256.0,
+          "x_min": 270
+        },
+        {
+          "text": "CINTAMOBIL1.32",
+          "confidence": 0.9748324751853943,
+          "bbox": [
+            [
+              31,
+              313
+            ],
+            [
+              565,
+              313
+            ],
+            [
+              565,
+              340
+            ],
+            [
+              31,
+              340
+            ]
+          ],
+          "original_text": "CINTAMOBIL1.32",
+          "avg_y": 326.5,
+          "x_min": 31,
+          "is_grouped": true
+        }
+      ],
+      "total_texts": 4,
+      "total_lines": 1,
+      "processing_time": 7.916119,
+      "image_path": null,
+      "timestamp": "2026-03-20T14:46:46.058660"
+    }
+  ],
+  "total_images": 3,
+  "processed_count": 3,
+  "failed_count": 0,
+  "export_timestamp": "2026-03-20T14:47:08.258980"
+}

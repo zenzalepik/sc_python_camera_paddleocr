@@ -1,0 +1,509 @@
+{
+  "batch_results": [
+    {
+      "texts": [
+        {
+          "text": "S",
+          "confidence": 0.8982048630714417,
+          "bbox": [
+            [
+              153,
+              283
+            ],
+            [
+              198,
+              279
+            ],
+            [
+              203,
+              332
+            ],
+            [
+              158,
+              336
+            ]
+          ],
+          "original_text": "S",
+          "avg_y": 307.5,
+          "x_min": 153,
+          "is_grouped": true
+        },
+        {
+          "text": "2470",
+          "confidence": 0.9857676029205322,
+          "bbox": [
+            [
+              235,
+              271
+            ],
+            [
+              422,
+              277
+            ],
+            [
+              420,
+              347
+            ],
+            [
+              233,
+              340
+            ]
+          ],
+          "original_text": "2470",
+          "avg_y": 308.75,
+          "x_min": 233,
+          "is_grouped": true
+        },
+        {
+          "text": "BAB",
+          "confidence": 0.7748832702636719,
+          "bbox": [
+            [
+              441,
+              279
+            ],
+            [
+              621,
+              279
+            ],
+            [
+              621,
+              358
+            ],
+            [
+              441,
+              358
+            ]
+          ],
+          "original_text": "BAB",
+          "avg_y": 318.5,
+          "x_min": 441,
+          "is_grouped": true
+        },
+        {
+          "text": "09",
+          "confidence": 0.9557974338531494,
+          "bbox": [
+            [
+              414,
+              363
+            ],
+            [
+              539,
+              369
+            ],
+            [
+              537,
+              412
+            ],
+            [
+              412,
+              406
+            ]
+          ],
+          "original_text": "09",
+          "avg_y": 387.5,
+          "x_min": 412,
+          "is_grouped": true
+        },
+        {
+          "text": "24",
+          "confidence": 0.9223366975784302,
+          "bbox": [
+            [
+              519,
+              371
+            ],
+            [
+              622,
+              376
+            ],
+            [
+              620,
+              413
+            ],
+            [
+              517,
+              408
+            ]
+          ],
+          "original_text": "24",
+          "avg_y": 392.0,
+          "x_min": 517,
+          "is_grouped": true
+        }
+      ],
+      "total_texts": 5,
+      "total_lines": 5,
+      "processing_time": 0.0,
+      "image_path": "C:/Users/Zain/Pictures/Plat Nomor/Screenshot 2026-03-07 142543.png",
+      "image_filename": "Screenshot 2026-03-07 142543.png",
+      "timestamp": "2026-03-19T09:57:42.909628",
+      "plate": null
+    },
+    {
+      "texts": [
+        {
+          "text": "m",
+          "confidence": 0.9959115982055664,
+          "bbox": [
+            [
+              20,
+              26
+            ],
+            [
+              36,
+              26
+            ],
+            [
+              36,
+              39
+            ],
+            [
+              20,
+              39
+            ]
+          ],
+          "original_text": "m",
+          "avg_y": 32.5,
+          "x_min": 20,
+          "is_grouped": true
+        },
+        {
+          "text": "Merdeka.com",
+          "confidence": 0.9903116226196289,
+          "bbox": [
+            [
+              59,
+              21
+            ],
+            [
+              154,
+              21
+            ],
+            [
+              154,
+              43
+            ],
+            [
+              59,
+              43
+            ]
+          ],
+          "original_text": "Merdeka.com",
+          "avg_y": 32.0,
+          "x_min": 59,
+          "is_grouped": true
+        },
+        {
+          "text": ">",
+          "confidence": 0.57203608751297,
+          "bbox": [
+            [
+              442,
+              21
+            ],
+            [
+              454,
+              21
+            ],
+            [
+              454,
+              37
+            ],
+            [
+              442,
+              37
+            ]
+          ],
+          "original_text": ">",
+          "avg_y": 29.0,
+          "x_min": 442,
+          "is_grouped": true
+        },
+        {
+          "text": "×",
+          "confidence": 0.5914925932884216,
+          "bbox": [
+            [
+              542,
+              18
+            ],
+            [
+              563,
+              18
+            ],
+            [
+              563,
+              38
+            ],
+            [
+              542,
+              38
+            ]
+          ],
+          "original_text": "×",
+          "avg_y": 28.0,
+          "x_min": 542,
+          "is_grouped": true
+        },
+        {
+          "text": "8",
+          "confidence": 0.9761872291564941,
+          "bbox": [
+            [
+              177,
+              174
+            ],
+            [
+              215,
+              174
+            ],
+            [
+              215,
+              223
+            ],
+            [
+              177,
+              223
+            ]
+          ],
+          "original_text": "8",
+          "avg_y": 198.5,
+          "x_min": 177,
+          "is_grouped": true
+        },
+        {
+          "text": "2833",
+          "confidence": 0.9986798167228699,
+          "bbox": [
+            [
+              227,
+              171
+            ],
+            [
+              332,
+              177
+            ],
+            [
+              329,
+              235
+            ],
+            [
+              224,
+              229
+            ]
+          ],
+          "original_text": "2833",
+          "avg_y": 203.0,
+          "x_min": 224,
+          "is_grouped": true
+        },
+        {
+          "text": "XKX",
+          "confidence": 0.9614948630332947,
+          "bbox": [
+            [
+              331,
+              178
+            ],
+            [
+              417,
+              178
+            ],
+            [
+              417,
+              239
+            ],
+            [
+              331,
+              239
+            ]
+          ],
+          "original_text": "XKX",
+          "avg_y": 208.5,
+          "x_min": 331,
+          "is_grouped": true
+        },
+        {
+          "text": "096×408",
+          "confidence": 0.83042311668396,
+          "bbox": [
+            [
+              532,
+              338
+            ],
+            [
+              584,
+              335
+            ],
+            [
+              584,
+              350
+            ],
+            [
+              533,
+              352
+            ]
+          ],
+          "original_text": "096 ×408",
+          "avg_y": 343.75,
+          "x_min": 532,
+          "is_grouped": true
+        }
+      ],
+      "total_texts": 8,
+      "total_lines": 8,
+      "processing_time": 0.0,
+      "image_path": "C:/Users/Zain/Pictures/Plat Nomor/Screenshot 2026-03-08 094450.png",
+      "image_filename": "Screenshot 2026-03-08 094450.png",
+      "timestamp": "2026-03-19T09:58:19.575945",
+      "plate": null
+    },
+    {
+      "texts": [
+        {
+          "text": "Cintamobil",
+          "confidence": 0.990750789642334,
+          "bbox": [
+            [
+              50,
+              7
+            ],
+            [
+              126,
+              7
+            ],
+            [
+              126,
+              25
+            ],
+            [
+              50,
+              25
+            ]
+          ],
+          "original_text": "Cintamobil",
+          "avg_y": 16.0,
+          "x_min": 50,
+          "is_grouped": true
+        },
+        {
+          "text": "669",
+          "confidence": 0.9946427941322327,
+          "bbox": [
+            [
+              265,
+              229
+            ],
+            [
+              297,
+              232
+            ],
+            [
+              294,
+              256
+            ],
+            [
+              263,
+              253
+            ]
+          ],
+          "original_text": "669",
+          "avg_y": 242.5,
+          "x_min": 263,
+          "is_grouped": true
+        },
+        {
+          "text": "08-19",
+          "confidence": 0.8873322606086731,
+          "bbox": [
+            [
+              271,
+              249
+            ],
+            [
+              292,
+              252
+            ],
+            [
+              291,
+              263
+            ],
+            [
+              270,
+              260
+            ]
+          ],
+          "original_text": "08-19",
+          "avg_y": 256.0,
+          "x_min": 270,
+          "is_grouped": true
+        },
+        {
+          "text": "CINTAMOBIL",
+          "confidence": 0.9548898935317993,
+          "bbox": [
+            [
+              31,
+              318
+            ],
+            [
+              122,
+              313
+            ],
+            [
+              123,
+              335
+            ],
+            [
+              32,
+              340
+            ]
+          ],
+          "original_text": "CINTAMOBIL",
+          "avg_y": 326.5,
+          "x_min": 31,
+          "is_grouped": true
+        },
+        {
+          "text": "1.32",
+          "confidence": 0.9947750568389893,
+          "bbox": [
+            [
+              535,
+              321
+            ],
+            [
+              564,
+              318
+            ],
+            [
+              565,
+              332
+            ],
+            [
+              536,
+              335
+            ]
+          ],
+          "original_text": "1.32",
+          "avg_y": 326.5,
+          "x_min": 535,
+          "is_grouped": true
+        }
+      ],
+      "total_texts": 5,
+      "total_lines": 4,
+      "processing_time": 0.0,
+      "image_path": "C:/Users/Zain/Pictures/Plat Nomor/Screenshot 2026-03-08 094556.png",
+      "image_filename": "Screenshot 2026-03-08 094556.png",
+      "timestamp": "2026-03-19T09:58:21.479957",
+      "plate": null
+    }
+  ],
+  "total_images": 3,
+  "processed_count": 2,
+  "failed_count": 2,
+  "export_timestamp": "2026-03-19T09:58:35.686962"
+}

@@ -1,0 +1,42 @@
+PaddleOCR Multiple Image Text Detection Result
+============================================================
+
+Image 1: N/A
+Timestamp: 2026-03-20T14:46:30.251402
+Processing Time: 8.09s
+Total Texts: 2
+============================================================
+
+[1] S2470BAB
+    Confidence: 0.8863
+[2] 0924
+    Confidence: 0.9391
+
+Image 2: N/A
+Timestamp: 2026-03-20T14:46:38.142541
+Processing Time: 7.88s
+Total Texts: 3
+============================================================
+
+[1] mMerdeka.com>×
+    Confidence: 0.7874
+[2] 82833XKX
+    Confidence: 0.9788
+[3] 096×408
+    Confidence: 0.8304
+
+Image 3: N/A
+Timestamp: 2026-03-20T14:46:46.058660
+Processing Time: 7.92s
+Total Texts: 4
+============================================================
+
+[1] Cintamobil
+    Confidence: 0.9908
+[2] 669
+    Confidence: 0.9946
+[3] 08-19
+    Confidence: 0.8873
+[4] CINTAMOBIL1.32
+    Confidence: 0.9748
+

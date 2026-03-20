@@ -1,8 +1,9 @@
 """
-Aplikasi Python dengan Layout Responsive - 2 Frame Kiri-Kanan
-- Frame kiri: Teks "Selamat Datang" + 4 tombol
-- Frame kanan: PaddleOCR Widget (OCR Text Detection)
+Aplikasi Python dengan Layout Responsive - Multiple Image Detection
+- Frame kiri: Teks "Selamat Datang" + 4 tombol + Image Queue Info
+- Frame kanan: PaddleOCR Widget (OCR Text Detection Multiple Images)
 - UI elements scale otomatis saat window resize
+- SUPPORT MULTIPLE IMAGE SELECTION!
 """
 
 import cv2
@@ -14,9 +15,9 @@ from tkinter import filedialog
 import time
 import threading
 
-# Import PaddleOCR widget
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "paddleocr_widget"))
-from paddleocr_widget import PaddleOCRWidget
+# Import PaddleOCR Multiple Widget
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "paddleocr_multiple_widget"))
+from paddleocr_multiple_widget import PaddleOCRMultipleWidget
 
 
 class Button:
@@ -62,27 +63,35 @@ class Button:
 
 
 class ResponsiveApp:
-    """Aplikasi dengan UI responsive yang scale otomatis."""
+    """Aplikasi dengan UI responsive yang scale otomatis untuk Multiple Images."""
 
     def __init__(self, window_width=1280, window_height=700):
         self.window_width = window_width
         self.window_height = window_height
-        self.window_name = "Aplikasi Python - PaddleOCR Widget"
+        self.window_name = "Aplikasi Python - Multiple Image OCR"
 
         # Initialize buttons
         self.buttons = [
             Button("Open", color=(0, 120, 255)),
-            Button("Detect", color=(0, 180, 0)),
+            Button("Detect All", color=(0, 180, 0)),  # Changed to "Detect All"
             Button("Export", color=(255, 100, 0)),
             Button("Clear", color=(200, 0, 200)),
         ]
 
-        # Initialize PaddleOCR widget
-        self.widget = PaddleOCRWidget()
+        # Initialize Tkinter root (required for Multiple Widget)
+        self.tk_root = tk.Tk()
+        self.tk_root.withdraw()
 
-        # Current image
+        # Initialize PaddleOCR Multiple Widget
+        self.widget = PaddleOCRMultipleWidget(root=self.tk_root)
+
+        # Current image (preview) - PERBAIKAN: ensure always int, not numpy array
         self.current_image = None
         self.current_image_path = None
+        self.current_index = int(-1)  # Force int, not numpy array
+
+        # Navigation for multiple images
+        self.showing_image_index = int(-1)  # Which image we're currently viewing (always int)
 
         # Mouse callback
         self.mouse_callback = None
@@ -93,20 +102,20 @@ class ResponsiveApp:
         self.ocr_result = None
         self.ocr_error = None
         self.ocr_thread = None
-        
-        # STATE FLAGS - untuk tracking progress
-        self.widget_initialized = True  # Widget sudah init di __init__
-        self.image_loaded = False
+
+        # STATE FLAGS
+        self.widget_initialized = True
+        self.images_loaded = False
         self.ocr_processing = False
         self.ocr_complete = False
-        self.cooldown_complete = True  # Ready dari awal
-        
+        self.cooldown_complete = True
+
         # Export success message flag
         self.show_export_message = False
         self.export_message_time = 0
 
     def draw_left_frame(self, frame, width, height):
-        """Draw frame kiri dengan teks 'Selamat Datang' + 4 tombol + hasil deteksi."""
+        """Draw frame kiri dengan teks 'Selamat Datang' + 4 tombol + queue info + hasil."""
         # Background putih
         cv2.rectangle(frame, (0, 0), (width, height), (255, 255, 255), -1)
 
@@ -127,28 +136,24 @@ class ResponsiveApp:
 
         # Draw export success message (below "Selamat Datang")
         if self.show_export_message:
-            # Check if 2 seconds have passed
             if time.time() - self.export_message_time > 2:
                 self.show_export_message = False
             else:
-                # Draw success message
                 msg = "✓ Export Berhasil!"
                 msg_font_scale = min(width, height) / 600
                 msg_thickness = max(1, int(msg_font_scale * 2))
-                
+
                 (msg_w, msg_h), _ = cv2.getTextSize(
                     msg, cv2.FONT_HERSHEY_SIMPLEX, msg_font_scale, msg_thickness
                 )
                 msg_x = (width - msg_w) // 2
-                msg_y = text_y + 50  # Below "Selamat Datang"
-                
-                # Draw background rectangle for message
-                cv2.rectangle(frame, 
+                msg_y = text_y + 50
+
+                cv2.rectangle(frame,
                              (msg_x - 20, msg_y - msg_h - 10),
                              (msg_x + msg_w + 20, msg_y + 10),
-                             (76, 175, 80),  # Green background
-                             -1)
-                
+                             (76, 175, 80), -1)
+
                 cv2.putText(frame, msg, (msg_x, msg_y),
                            cv2.FONT_HERSHEY_SIMPLEX, msg_font_scale, (255, 255, 255), msg_thickness)
 
@@ -167,112 +172,190 @@ class ResponsiveApp:
             btn_y = start_y
             button.draw(frame, btn_x, btn_y, button_width, button_height, font_scale_btn)
 
-        # Draw plat nomor panel (jika ada)
-        self.draw_plate_panel(frame, width, height, start_y + button_height)
+        # Draw image queue info
+        self.draw_queue_info(frame, width, height, start_y + button_height + 20)
 
-        # Draw hasil deteksi panel di bawah tombol
-        self.draw_result_panel(frame, width, height, start_y + button_height)
+        # Draw hasil deteksi panel
+        self.draw_result_panel(frame, width, height, start_y + button_height + 60)
 
-    def draw_plate_panel(self, frame, width, height, y_start):
-        """Draw panel plat nomor terdeteksi - WITH CLEAR CHECK."""
-        # Check jika data sudah di-clear
-        if not self.image_loaded or self.ocr_result is None:
-            return  # Don't draw if cleared
-        
-        # Get detected plate from ocr_result
-        plate = None
-        if self.ocr_result and 'plate' in self.ocr_result:
-            plate = self.ocr_result['plate']
-
-        if plate is None:
-            return  # Don't draw if no plate detected
-
-        panel_y = y_start + 20
+    def draw_queue_info(self, frame, width, height, y_start):
+        """Draw image queue info dengan list semua gambar."""
         margin = 10
-        panel_height = 70
-
-        # Draw panel background (green gradient)
-        cv2.rectangle(frame, (margin, panel_y),
-                     (width - margin, panel_y + panel_height), (0, 100, 0), -1)
-        cv2.rectangle(frame, (margin, panel_y),
-                     (width - margin, panel_y + panel_height), (0, 255, 0), 2)
-
-        # Draw title (top line)
-        title = "Plat Nomor Terdeteksi:"
-        cv2.putText(frame, title, (margin + 15, panel_y + 25),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
-
-        # Draw plate number (large, bold, centered) - second line
-        plate_text = plate.upper()
-        (plate_w, plate_h), _ = cv2.getTextSize(plate_text, cv2.FONT_HERSHEY_SIMPLEX, 1.5, 3)
-        plate_x = (width - plate_w) // 2
-        cv2.putText(frame, plate_text, (plate_x, panel_y + 58),
-                   cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 255, 255), 3)
+        
+        # Get queue info from widget - PERBAIKAN: gunakan widget.images
+        if self.widget:
+            images = self.widget.images
+            total = len(images)
+            completed = sum(1 for img in images if img.get('status') == 'completed')
+            pending = sum(1 for img in images if img.get('status') == 'pending')
+            failed = sum(1 for img in images if img.get('status') == 'failed')
+            
+            # Draw header
+            info_text = f"Queue: {total} images | ✓: {completed} | ⏳: {pending} | ✗: {failed}"
+            
+            cv2.rectangle(frame, (margin, y_start),
+                         (width - margin, y_start + 35), (240, 240, 240), -1)
+            cv2.rectangle(frame, (margin, y_start),
+                         (width - margin, y_start + 35), (128, 128, 128), 2)
+            
+            cv2.putText(frame, info_text, (margin + 10, y_start + 23),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 100, 255), 1)
+            
+            # Draw image list jika ada gambar
+            if total > 0:
+                list_y = y_start + 45
+                item_height = 28
+                max_items = 6  # Max items to display
+                
+                # Draw background for list
+                list_height = min(total, max_items) * item_height + 10
+                cv2.rectangle(frame, (margin, list_y),
+                             (width - margin, list_y + list_height), (250, 250, 250), -1)
+                cv2.rectangle(frame, (margin, list_y),
+                             (width - margin, list_y + list_height), (180, 180, 180), 1)
+                
+                # Draw each image item
+                for i in range(min(total, max_items)):
+                    img_data = images[i]
+                    y_pos = list_y + 8 + (i * item_height)
+                    
+                    # Status icon
+                    status = img_data.get('status', 'pending')
+                    if status == 'completed':
+                        status_icon = "✓"
+                        status_color = (0, 200, 0)
+                    elif status == 'processing':
+                        status_icon = "⏳"
+                        status_color = (0, 165, 255)
+                    elif status == 'failed':
+                        status_icon = "✗"
+                        status_color = (0, 0, 255)
+                    else:
+                        status_icon = "○"
+                        status_color = (128, 128, 128)
+                    
+                    # Highlight current showing image
+                    if i == self.showing_image_index:
+                        cv2.rectangle(frame, (margin + 3, y_pos - 18),
+                                     (width - margin - 3, y_pos + 8), (200, 230, 255), -1)
+                    
+                    # Draw status
+                    cv2.putText(frame, status_icon, (margin + 8, y_pos),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, status_color, 1)
+                    
+                    # Draw filename (truncated)
+                    filename = img_data.get('filename', 'Unknown')
+                    max_chars = (width - 80) // 8
+                    if len(filename) > max_chars:
+                        filename = filename[:max_chars-3] + "..."
+                    
+                    cv2.putText(frame, f"{i+1}. {filename}", (margin + 28, y_pos),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+                    
+                    # Draw texts count if completed
+                    if status == 'completed' and img_data.get('result'):
+                        texts_count = img_data['result'].get('total_texts', 0)
+                        texts_text = f"{texts_count} texts"
+                        (texts_w, _), _ = cv2.getTextSize(texts_text, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
+                        cv2.putText(frame, texts_text, (width - margin - texts_w - 10, y_pos),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 128, 0), 1)
+                
+                # Show "and more" if needed
+                if total > max_items:
+                    more_text = f"... and {total - max_items} more"
+                    cv2.putText(frame, more_text, (margin + 10, list_y + list_height + 18),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.45, (128, 128, 128), 1)
 
     def draw_result_panel(self, frame, width, height, y_start):
-        """Draw panel hasil deteksi di bawah tombol."""
-        # Panel area - start lower to make room for plate panel
-        panel_y = y_start + 100  # Increased from 30 to 100 to push down
+        """Draw panel hasil deteksi - menampilkan hasil dari gambar yang dipilih."""
+        panel_y = y_start
         panel_height = height - panel_y - 30
         margin = 10
-        
+
         # Draw panel background
-        cv2.rectangle(frame, (margin, panel_y), 
+        cv2.rectangle(frame, (margin, panel_y),
                      (width - margin, height - 20), (240, 240, 240), -1)
-        cv2.rectangle(frame, (margin, panel_y), 
+        cv2.rectangle(frame, (margin, panel_y),
                      (width - margin, height - 20), (128, 128, 128), 2)
-        
+
         # Title
         title = "Hasil Deteksi:"
         cv2.putText(frame, title, (margin + 10, panel_y + 25),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
-        
+
         # Check loading state
         if self.is_loading:
-            # Draw loading indicator
             self.draw_loading_indicator(frame, width, panel_y, panel_height, margin)
             return
-        
+
         # Check error
         if self.ocr_error:
             error_text = f"Error: {self.ocr_error}"
             cv2.putText(frame, error_text, (margin + 10, panel_y + 60),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
             return
-        
-        # Check ada result
-        if self.ocr_result is None and self.widget.current_result is None:
-            info = "Belum ada hasil deteksi"
+
+        # Check result - PERBAIKAN: gunakan widget.images dan showing_image_index
+        if not self.widget or not self.widget.images or len(self.widget.images) == 0:
+            info = "Belum ada gambar. Klik 'Open' untuk menambah."
             cv2.putText(frame, info, (margin + 10, panel_y + 60),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (128, 128, 128), 1)
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (128, 128, 128), 1)
             return
+
+        # Get current image to display - PERBAIKAN: check dengan int()
+        try:
+            showing_idx = int(self.showing_image_index) if self.showing_image_index is not None else -1
+        except (TypeError, ValueError):
+            showing_idx = -1
         
-        # Get texts dari OCR result atau widget
-        if self.ocr_result:
-            texts = self.ocr_result['texts']
-            total = self.ocr_result['count']
-        else:
-            texts = self.widget.get_texts()
-            total = len(texts)
+        if showing_idx < 0 or showing_idx >= len(self.widget.images):
+            info = "Pilih gambar dari list untuk melihat hasil"
+            cv2.putText(frame, info, (margin + 10, panel_y + 60),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (128, 128, 128), 1)
+            return
+
+        img_data = self.widget.images[showing_idx]
         
-        # Show count
-        count_info = f"Total: {total} teks"
-        cv2.putText(frame, count_info, (width - margin - 120, panel_y + 25),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 128, 0), 1)
+        # Check if image has result
+        if not img_data.get('result'):
+            if img_data['status'] == 'pending':
+                info = "Image belum diproses. Klik 'Detect All'."
+            elif img_data['status'] == 'processing':
+                info = "Sedang memproses..."
+            elif img_data['status'] == 'failed':
+                info = f"Failed: {img_data.get('error', 'Unknown error')}"
+            else:
+                info = "No result available"
+            
+            cv2.putText(frame, info, (margin + 10, panel_y + 60),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (128, 128, 128), 1)
+            return
+
+        # Get result
+        result = img_data['result']
+        texts = result.get('texts', [])
+        total = len(texts)
+        plate = result.get('plate', None)
+
+        # Show image info
+        img_filename = result.get('image_filename', img_data.get('filename', 'N/A'))
+        img_info = f"Image {self.showing_image_index + 1}: {img_filename} | Total: {total} teks"
+        if plate:
+            img_info += f" | Plate: {plate}"
         
-        # Draw texts (max 10 yang ditampilkan)
-        max_display = 10
+        cv2.putText(frame, img_info, (margin + 10, panel_y + 55),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 100, 255), 1)
+
+        # Draw texts
+        max_display = 15
+        line_height = 25
         start_idx = 0
-        line_height = 28
-        max_lines = (panel_height - 80) // line_height
-        
-        # Scroll jika lebih dari max_lines
-        if total > max_lines:
-            # Show last max_lines
-            start_idx = total - max_lines
-        
+
+        if total > max_display:
+            start_idx = total - max_display
+
         display_texts = texts[start_idx:start_idx + max_display]
-        
+
         for i, text_item in enumerate(display_texts, start_idx):
             if isinstance(text_item, dict):
                 text = text_item['text']
@@ -280,142 +363,90 @@ class ResponsiveApp:
             else:
                 text = str(text_item)
                 conf = 0.0
-            
-            # Truncate text jika terlalu panjang
-            max_chars = (width - 60) // 10
+
+            max_chars = (width - 60) // 9
             if len(text) > max_chars:
                 text = text[:max_chars-3] + "..."
-            
-            # Draw text line
-            y_pos = panel_y + 65 + (i - start_idx) * line_height
-            
-            # Background selang-seling
+
+            y_pos = panel_y + 85 + ((i - start_idx) * line_height)
+
             color = (255, 255, 255) if i % 2 == 0 else (230, 230, 230)
-            cv2.rectangle(frame, (margin + 5, y_pos - 20),
-                         (width - margin - 5, y_pos + 8), color, -1)
-            
-            # Text
+            cv2.rectangle(frame, (margin + 5, y_pos - 18),
+                         (width - margin - 5, y_pos + 5), color, -1)
+
             label = f"{i+1}. {text}"
             cv2.putText(frame, label, (margin + 10, y_pos),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
-            
-            # Confidence (kanan)
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 0), 1)
+
             conf_label = f"({conf:.2f})"
-            (conf_w, conf_h), _ = cv2.getTextSize(conf_label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+            (conf_w, _), _ = cv2.getTextSize(conf_label, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
             cv2.putText(frame, conf_label, (width - margin - conf_w - 15, y_pos),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 128, 0), 1)
-        
-        # Info jika ada lebih banyak teks
-        if total > max_display:
-            info = f"... dan {total - max_display} teks lainnya"
-            cv2.putText(frame, info, (margin + 10, height - 40),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.45, (128, 128, 128), 1)
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 128, 0), 1)
 
     def draw_loading_indicator(self, frame, width, panel_y, panel_height, margin):
-        """Draw loading indicator saat OCR processing."""
-        # Calculate elapsed time
+        """Draw loading indicator."""
         elapsed = time.time() - self.loading_start_time
-        
-        # Center positions
         center_x = width // 2
         start_y = panel_y + 80
-        
-        # Draw loading message
-        loading_text = "⏳ Processing OCR..."
-        (text_w, text_h), _ = cv2.getTextSize(loading_text, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)
+
+        # Get progress from widget
+        if self.widget.gui:
+            processed = sum(1 for img in self.widget.gui.images if img.get('status') in ['completed', 'failed'])
+            total = len(self.widget.gui.images)
+            progress_text = f"⏳ Processing... ({processed}/{total})"
+        else:
+            progress_text = "⏳ Processing..."
+
+        (text_w, text_h), _ = cv2.getTextSize(progress_text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
         text_x = center_x - text_w // 2
-        cv2.putText(frame, loading_text, (text_x, start_y),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
-        
-        # Draw elapsed time
+        cv2.putText(frame, progress_text, (text_x, start_y),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+
         time_text = f"⏱️  Elapsed: {elapsed:.1f}s"
-        (time_w, time_h), _ = cv2.getTextSize(time_text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 1)
+        (time_w, _), _ = cv2.getTextSize(time_text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 1)
         time_x = center_x - time_w // 2
-        cv2.putText(frame, time_text, (time_x, start_y + 40),
+        cv2.putText(frame, time_text, (time_x, start_y + 35),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (100, 100, 100), 1)
-        
-        # Draw animated loading bar
+
+        # Progress bar
         bar_width = 400
         bar_height = 25
         bar_x = center_x - bar_width // 2
-        bar_y = start_y + 80
-        
-        # Background bar
-        cv2.rectangle(frame, (bar_x, bar_y), 
+        bar_y = start_y + 70
+
+        cv2.rectangle(frame, (bar_x, bar_y),
                      (bar_x + bar_width, bar_y + bar_height), (200, 200, 200), -1)
-        cv2.rectangle(frame, (bar_x, bar_y), 
+        cv2.rectangle(frame, (bar_x, bar_y),
                      (bar_x + bar_width, bar_y + bar_height), (100, 100, 100), 2)
-        
-        # Animated fill (pulsing effect)
-        fill_width = int((elapsed * 40) % (bar_width + 100)) - 50
-        if fill_width < 10:
-            fill_width = 10
-        if fill_width > bar_width:
-            fill_width = bar_width
-        
-        # Pulsing color (blue ↔ cyan ↔ green)
-        pulse = int(elapsed * 3) % 3
-        if pulse == 0:
-            color = (255, 0, 0)  # Blue
-        elif pulse == 1:
-            color = (255, 255, 0)  # Cyan
-        else:
-            color = (0, 255, 0)  # Green
-        
-        cv2.rectangle(frame, (bar_x + 2, bar_y + 2), 
-                     (bar_x + fill_width - 2, bar_y + bar_height - 2), color, -1)
-        
-        # Draw percentage
-        percent = int((fill_width / bar_width) * 100)
-        percent_text = f"{percent}%"
-        (pct_w, pct_h), _ = cv2.getTextSize(percent_text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 1)
-        pct_x = center_x - pct_w // 2
-        cv2.putText(frame, percent_text, (pct_x, bar_y + bar_height + 25),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 128, 0), 2)
-        
-        # Draw spinner dots
-        dot_count = 5
-        dot_spacing = 40
-        dots_start_x = center_x - (dot_count * dot_spacing) // 2
-        dots_y = bar_y + bar_height + 60
-        
-        for i in range(dot_count):
-            dot_x = dots_start_x + i * dot_spacing
-            dot_y = dots_y
-            
-            # Animate dots - wave effect
-            dot_phase = (int(elapsed * 10) + i * 2) % (dot_count * 2)
-            if dot_phase < dot_count:
-                dot_active = True
-                dot_radius = 8
-                dot_color = (0, 255, 0)  # Green
-            else:
-                dot_active = False
-                dot_radius = 5
-                dot_color = (200, 200, 200)  # Gray
-            
-            cv2.circle(frame, (dot_x, dot_y), dot_radius, dot_color, -1)
-            cv2.circle(frame, (dot_x, dot_y), dot_radius, (100, 100, 100), 1)
-        
-        # Draw please wait message
-        wait_text = "Please wait..."
-        (wait_w, wait_h), _ = cv2.getTextSize(wait_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-        wait_x = center_x - wait_w // 2
-        cv2.putText(frame, wait_text, (wait_x, dots_y + 35),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (128, 128, 128), 1)
+
+        if self.widget.gui and len(self.widget.gui.images) > 0:
+            processed = sum(1 for img in self.widget.gui.images if img.get('status') in ['completed', 'failed'])
+            progress = processed / len(self.widget.gui.images)
+            fill_width = int(bar_width * progress)
+            cv2.rectangle(frame, (bar_x + 2, bar_y + 2),
+                         (bar_x + fill_width - 2, bar_y + bar_height - 2), (0, 255, 0), -1)
+
+            percent_text = f"{int(progress * 100)}%"
+            (pct_w, _), _ = cv2.getTextSize(percent_text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 1)
+            pct_x = center_x - pct_w // 2
+            cv2.putText(frame, percent_text, (pct_x, bar_y + bar_height + 25),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 128, 0), 2)
 
     def draw_right_frame(self, frame, start_x, width, height, ocr_frame=None):
-        """Draw frame kanan dengan PaddleOCR widget."""
+        """Draw frame kanan dengan preview image."""
         if ocr_frame is not None:
-            # Resize OCR frame to fit right frame
-            ocr_resized = cv2.resize(ocr_frame, (width, height))
-
-            # Copy to main frame
-            frame[:height, start_x:start_x + width] = ocr_resized
+            try:
+                ocr_resized = cv2.resize(ocr_frame, (width, height))
+                frame[:height, start_x:start_x + width] = ocr_resized
+            except Exception as e:
+                print(f"[WARNING] Cannot resize preview: {e}")
+                cv2.rectangle(frame, (start_x, 0), (start_x + width, height), (128, 128, 128), -1)
+                text = "Preview Error"
+                cv2.putText(frame, text, (start_x + 10, height // 2),
+                           cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
         else:
-            # Fallback
             cv2.rectangle(frame, (start_x, 0), (start_x + width, height), (128, 128, 128), -1)
-            text = "No Image Loaded"
+            text = "No Image Preview"
             cv2.putText(frame, text, (start_x + 10, height // 2),
                        cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
 
@@ -427,347 +458,499 @@ class ResponsiveApp:
         self.draw_left_frame(frame[:, :half_width], half_width, height)
         self.draw_right_frame(frame, half_width, half_width, height, ocr_frame)
 
-        # Divider line
         cv2.line(frame, (half_width, 0), (half_width, height), (255, 255, 255), 2)
 
     def open_image(self):
-        """Open file dialog untuk pilih gambar."""
-        # Gunakan tkinter untuk file dialog
-        root = tk.Tk()
-        root.withdraw()  # Hide main window
+        """Open file dialog untuk pilih MULTIPLE images - DENGAN LENGKAP LOG."""
+        print("\n" + "="*70)
+        print("  [OPEN] OPEN BUTTON CLICKED")
+        print("="*70)
+        print(f"[OPEN] Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"[OPEN] Current queue size: {len(self.widget.images) if self.widget.gui else 0}")
+        
+        # Use existing tk_root
+        print("[OPEN] Preparing file dialog...")
+        self.tk_root.update()
+        self.tk_root.focus_force()
+        self.tk_root.attributes('-topmost', True)
+        self.tk_root.after(100, lambda: self.tk_root.attributes('-topmost', False))
         
         filetypes = [
             ("Image files", "*.jpg *.jpeg *.png *.bmp *.tiff *.webp"),
             ("All files", "*.*")
         ]
 
-        filepath = filedialog.askopenfilename(
-            title="Select Image",
-            filetypes=filetypes
+        print("[OPEN] Showing file dialog...")
+        print("[OPEN] Supported formats: JPG, JPEG, PNG, BMP, TIFF, WEBP")
+        
+        filepaths = filedialog.askopenfilenames(
+            title="Select Multiple Images",
+            filetypes=filetypes,
+            parent=self.tk_root
         )
 
-        root.destroy()
+        print(f"[OPEN] Files selected: {len(filepaths) if filepaths else 0}")
+        
+        if filepaths:
+            print("\n[OPEN] File list:")
+            for i, path in enumerate(filepaths, 1):
+                filename = os.path.basename(path)
+                size = os.path.getsize(path) / 1024  # KB
+                print(f"  [{i}] {filename} ({size:.1f} KB)")
+                print(f"      Path: {path}")
+            
+            # Add multiple images to widget queue
+            print(f"\n[OPEN] Adding {len(filepaths)} images to queue...")
+            count = self.widget.add_images(list(filepaths))
+            self.images_loaded = True
 
-        if filepath:
-            self.current_image = cv2.imread(filepath)
-            self.current_image_path = filepath
-            self.image_loaded = True  # Set flag
-            print(f"[OK] Loaded: {filepath}")
+            # Set first image as current preview
+            if count > 0 and self.current_index < 0:
+                self.current_index = 0
+                self.show_preview_image()
+                print(f"[OPEN] Set preview to image #{self.current_index + 1}")
+
+            print(f"\n[OK] Added {count} images to queue")
+            print(f"[OK] New queue size: {len(self.widget.images)}")
+            print(f"[OK] Queue status: {sum(1 for img in self.widget.images if img['status'] == 'pending')} pending")
+            print("="*70)
             return True
+        else:
+            print("[OPEN] No files selected (user canceled)")
+            print("="*70)
 
         return False
 
+    def show_preview_image(self):
+        """Show preview of current selected image - PERBAIKAN."""
+        # Update showing_image_index to match current_index - ensure int
+        try:
+            current_idx = int(self.current_index) if self.current_index is not None else -1
+        except (TypeError, ValueError):
+            current_idx = -1
+        
+        if current_idx >= 0 and self.widget and current_idx < len(self.widget.images):
+            self.showing_image_index = current_idx  # Already int
+            img_data = self.widget.images[current_idx]
+            if img_data and 'image' in img_data:
+                self.current_image = img_data['image']
+                self.current_image_path = img_data['path']
+                print(f"[INFO] Preview: {img_data['filename']}")
+
     def detect_text(self):
-        """Detect text dengan STATE MACHINE - proper sequencing + DETAILED LOGS."""
+        """Detect text dari SEMUA images dalam queue - DENGAN LENGKAP LOG."""
+        print("\n" + "="*70)
+        print("  [DETECT] DETECT ALL BUTTON CLICKED")
+        print("="*70)
+        print(f"[DETECT] Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}")
         
-        print(f"\n{'='*60}")
-        print(f"[DETECT] Click detected at {time.strftime('%H:%M:%S')}")
-        print(f"{'='*60}")
-        
-        # === FASE 1: Check image loaded ===
-        print(f"[FASE 1] Checking image loaded...")
-        if self.current_image is None:
-            print(f"[FASE 1] ❌ FAILED - No image loaded!")
-            print("[WARNING] No image loaded. Open image first.")
+        # Check queue - PERBAIKAN: cek widget.images bukan widget.gui.images
+        if not self.widget or not self.widget.images:
+            print("[WARNING] No images in queue!")
+            print("[WARNING] Please click 'Open' first to add images")
+            print("="*70)
             return
-        print(f"[FASE 1] ✓ PASSED - Image loaded: {self.current_image.shape}")
         
-        # === FASE 2: Check thread tidak sedang jalan ===
-        print(f"[FASE 2] Checking OCR thread status...")
+        # Check if already processing
         if self.ocr_thread and self.ocr_thread.is_alive():
-            print(f"[FASE 2] ❌ FAILED - Thread still alive!")
-            print("[WARNING] OCR already running! Please wait until complete...")
-            print("[INFO] Click ignored to prevent race condition.")
+            print("[WARNING] OCR already running!")
+            print("[WARNING] Please wait for current processing to complete")
+            print("="*70)
             return
-        print(f"[FASE 2] ✓ PASSED - Thread not running")
         
-        # === FASE 3: Check cooldown sudah selesai ===
-        print(f"[FASE 3] Checking cooldown status...")
-        if not self.cooldown_complete:
-            print(f"[FASE 3] ❌ FAILED - Cooldown not complete!")
-            print("[WARNING] Cooldown not complete yet. Please wait...")
-            return
-        print(f"[FASE 3] ✓ PASSED - Cooldown complete")
+        # Show queue info - PERBAIKAN: gunakan widget.images
+        queue = self.widget.images
+        total = len(queue)
+        pending = sum(1 for img in queue if img['status'] == 'pending')
+        completed = sum(1 for img in queue if img['status'] == 'completed')
+        failed = sum(1 for img in queue if img['status'] == 'failed')
         
-        # === FASE 4: Clear state ===
-        print(f"[FASE 4] Clearing previous state...")
-        print(f"  - ocr_result: {self.ocr_result is not None}")
-        print(f"  - ocr_error: {self.ocr_error is not None}")
+        print(f"[DETECT] Queue information:")
+        print(f"  - Total images: {total}")
+        print(f"  - Pending: {pending}")
+        print(f"  - Completed: {completed}")
+        print(f"  - Failed: {failed}")
+        
+        # Clear previous results
+        print(f"\n[DETECT] Clearing previous results...")
         self.ocr_result = None
         self.ocr_error = None
-        self.widget.clear_result()
-        print(f"[FASE 4] ✓ State cleared")
+        print(f"[DETECT] Previous results cleared")
         
-        # === FASE 5: Set state flags ===
-        print(f"[FASE 5] Setting state flags...")
+        # Set state flags
+        print(f"\n[DETECT] Setting state flags...")
         self.ocr_processing = True
         self.ocr_complete = False
         self.cooldown_complete = False
         self.is_loading = True
         self.loading_start_time = time.time()
-        print(f"  - ocr_processing: {self.ocr_processing}")
-        print(f"  - ocr_complete: {self.ocr_complete}")
-        print(f"  - cooldown_complete: {self.cooldown_complete}")
-        print(f"  - is_loading: {self.is_loading}")
-        print(f"[FASE 5] ✓ Flags set")
+        print(f"  - ocr_processing: True")
+        print(f"  - ocr_complete: False")
+        print(f"  - is_loading: True")
         
-        print(f"\n{'='*60}")
-        print("Running OCR...")
-        print(f"{'='*60}")
+        print(f"\n[DETECT] Starting batch processing...")
+        print(f"  - Images to process: {total}")
+        print(f"  - Estimated time: ~{total * 5} seconds ({total} images × ~5s each)")
         
-        # === FASE 6: Start OCR thread ===
-        print(f"[FASE 6] Starting OCR thread...")
+        # Start OCR thread
         self.ocr_thread = threading.Thread(target=self._ocr_worker)
         self.ocr_thread.daemon = True
         self.ocr_thread.start()
-        print(f"[FASE 6] ✓ Thread started (ID: {self.ocr_thread.ident})")
+        
+        print(f"\n[OK] OCR thread started (ID: {self.ocr_thread.ident})")
+        print(f"[OK] Processing in background...")
+        print("="*70)
 
     def _ocr_worker(self):
-        """OCR worker thread dengan DETAILED LOGS."""
+        """OCR worker thread untuk batch processing - DENGAN LENGKAP LOG."""
         thread_id = threading.current_thread().ident
-        print(f"\n{'='*60}")
-        print(f"[THREAD {thread_id}] Started at {time.strftime('%H:%M:%S')}")
-        print(f"{'='*60}")
         
+        print("\n" + "="*70)
+        print(f"  [THREAD {thread_id}] OCR PROCESSING STARTED")
+        print("="*70)
+        print(f"[THREAD] Thread ID: {thread_id}")
+        print(f"[THREAD] Started at: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"[THREAD] Images to process: {len(self.widget.images) if self.widget else 0}")
+        print("="*70)
+
         try:
-            # === FASE 1: Process OCR ===
-            print(f"[THREAD {thread_id}] [FASE 1] Starting OCR processing...")
-            print(f"[THREAD {thread_id}]   - Image shape: {self.current_image.shape}")
-            print(f"[THREAD {thread_id}]   - Image dtype: {self.current_image.dtype}")
+            # Process all images - PERBAIKAN: gunakan widget.images
+            print(f"\n[THREAD] Calling widget.process_all()...")
+            results = self.widget.process_all()
             
-            frame_with_boxes, result = self.widget.process_frame(self.current_image)
+            print(f"\n[THREAD] Processing complete!")
+            print(f"[THREAD] Total results: {len(results)}")
+
+            # Set first completed image as current result for preview - PERBAIKAN
+            print(f"\n[THREAD] Setting preview to first completed image...")
+            for i, img_data in enumerate(self.widget.images):
+                if img_data['status'] == 'completed' and img_data.get('result'):
+                    self.current_index = i
+                    self.ocr_result = img_data['result']
+                    self.show_preview_image()
+                    print(f"[THREAD] Set preview to image #{i+1}: {img_data['filename']}")
+                    break
+
+            # Show detailed results - PERBAIKAN: gunakan widget.images
+            print(f"\n{'='*70}")
+            print(f"[THREAD] BATCH PROCESSING RESULTS")
+            print(f"{'='*70}")
             
-            print(f"[THREAD {thread_id}] [FASE 1] ✓ OCR processing complete")
-            print(f"[THREAD {thread_id}]   - Result type: {type(result)}")
-            print(f"[THREAD {thread_id}]   - Result keys: {result.keys() if isinstance(result, dict) else 'N/A'}")
-
-            # === FASE 2: Get results ===
-            print(f"[THREAD {thread_id}] [FASE 2] Getting results...")
-            texts = self.widget.get_texts()
-            plate = self.widget.get_detected_plate()
+            completed_count = sum(1 for img in self.widget.images if img['status'] == 'completed')
+            failed_count = sum(1 for img in self.widget.images if img['status'] == 'failed')
             
-            print(f"[THREAD {thread_id}] [FASE 2] ✓ Results retrieved")
-            print(f"[THREAD {thread_id}]   - Text count: {len(texts)}")
-            print(f"[THREAD {thread_id}]   - Plate: {plate}")
-
-            # === FASE 3: Save results ===
-            print(f"[THREAD {thread_id}] [FASE 3] Saving results...")
-            self.ocr_result = {
-                'texts': texts,
-                'count': len(texts),
-                'plate': plate,
-                'display_frame': frame_with_boxes
-            }
-            print(f"[THREAD {thread_id}] [FASE 3] ✓ Results saved")
-            print(f"[THREAD {thread_id}]   - ocr_result keys: {self.ocr_result.keys()}")
-
-            print(f"\n[SUCCESS] Detected {len(texts)} text(s):")
-            for i, text in enumerate(texts, 1):
-                print(f"  [{i}] {text}")
-
-            if plate:
-                print(f"\n[🚗 PLATE DETECTED] {plate}")
-
-            print("\n" + "="*60)
+            print(f"\n[SUMMARY] Processing Summary:")
+            print(f"  - Total images: {len(self.widget.images)}")
+            print(f"  - Completed: {completed_count} ✓")
+            print(f"  - Failed: {failed_count} ✗")
+            print(f"  - Success rate: {(completed_count/len(self.widget.images)*100):.1f}%")
             
-            # === FASE 4: Set OCR complete flag ===
-            print(f"[THREAD {thread_id}] [FASE 4] Setting ocr_complete=True...")
-            self.ocr_complete = True
-            print(f"[THREAD {thread_id}] [FASE 4] ✓ Flag set")
+            # Show per-image results
+            print(f"\n[RESULTS] Per-image Results:")
+            for i, img_data in enumerate(self.widget.images, 1):
+                status_icon = "✓" if img_data['status'] == 'completed' else "✗" if img_data['status'] == 'failed' else "○"
+                if img_data['status'] == 'completed' and img_data.get('result'):
+                    result = img_data['result']
+                    texts_count = result.get('total_texts', 0)
+                    plate = result.get('plate', 'N/A')
+                    print(f"  [{i}] {img_data['filename']} {status_icon}")
+                    print(f"      - Texts detected: {texts_count}")
+                    if plate != 'N/A':
+                        print(f"      - Plate detected: {plate}")
+                else:
+                    print(f"  [{i}] {img_data['filename']} {status_icon}")
+                    if img_data.get('error'):
+                        print(f"      - Error: {img_data['error'][:50]}...")
+
+            print(f"\n[SUCCESS] Batch processing complete!")
+            print(f"{'='*70}")
 
         except Exception as e:
             import traceback
             self.ocr_error = str(e)
             error_traceback = traceback.format_exc()
-            print(f"\n{'='*60}")
-            print(f"[THREAD {thread_id}] [ERROR] OCR failed!")
-            print(f"[THREAD {thread_id}]   - Error type: {type(e).__name__}")
-            print(f"[THREAD {thread_id}]   - Error message: {e}")
-            print(f"[THREAD {thread_id}]   - Traceback:\n{error_traceback}")
-            print(f"{'='*60}")
+            
+            print(f"\n{'='*70}")
+            print(f"[THREAD {thread_id}] [ERROR] OCR FAILED!")
+            print(f"{'='*70}")
+            print(f"[ERROR] Error type: {type(e).__name__}")
+            print(f"[ERROR] Error message: {e}")
+            print(f"[ERROR] Traceback:\n{error_traceback}")
+            print(f"{'='*70}")
+            
         finally:
-            # === FASE 5: Clear processing flag ===
             elapsed = time.time() - self.loading_start_time
             self.is_loading = False
             self.ocr_processing = False
-            
-            print(f"\n{'='*60}")
-            print(f"[THREAD {thread_id}] [FASE 5] Clearing processing flags...")
-            print(f"[THREAD {thread_id}]   - Elapsed time: {elapsed:.2f}s")
-            print(f"[THREAD {thread_id}]   - ocr_processing: {self.ocr_processing}")
-            print(f"[THREAD {thread_id}]   - is_loading: {self.is_loading}")
-            print(f"[THREAD {thread_id}] [FASE 5] ✓ Flags cleared")
-            
-            # === FASE 6: Set cooldown complete flag (NO DELAY!) ===
-            print(f"[THREAD {thread_id}] [FASE 6] Setting cooldown_complete=True...")
             self.cooldown_complete = True
-            print(f"[THREAD {thread_id}] [FASE 6] ✓ Flag set")
-            print(f"[THREAD {thread_id}] Cooldown complete - ready for next detection")
-            print(f"{'='*60}")
+
+            print(f"\n{'='*70}")
+            print(f"[THREAD {thread_id}] CLEANUP")
+            print(f"{'='*70}")
+            print(f"[THREAD] Elapsed time: {elapsed:.2f}s")
+            print(f"[THREAD] Setting flags:")
+            print(f"  - is_loading: False")
+            print(f"  - ocr_processing: False")
+            print(f"  - cooldown_complete: True")
+            print(f"[THREAD] Ready for next operation")
+            print(f"{'='*70}")
 
     def export_result(self):
-        """Export hasil OCR - FULL EXPORT."""
-        print("\n" + "="*60)
-        print("[EXPORT] === EXPORT BUTTON CLICKED ===")
-        print("="*60)
+        """Export hasil OCR dari semua images - DENGAN LENGKAP LOG."""
+        print("\n" + "="*70)
+        print("  [EXPORT] EXPORT BUTTON CLICKED")
+        print("="*70)
+        print(f"[EXPORT] Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}")
         
-        # Check if we have results
-        if self.widget.current_result is None:
-            print("[WARNING] No result to export. Please click 'Detect' first.")
-            print("[EXPORT] Export cancelled - no data available")
+        # Check if there are results - PERBAIKAN: gunakan widget.images
+        if not self.widget:
+            print("[WARNING] Widget not initialized!")
+            print("[EXPORT] Export cancelled")
+            print("="*70)
             return
-
-        if len(self.widget.current_result.get('texts', [])) == 0:
-            print("[WARNING] No text detected. Nothing to export.")
-            print("[EXPORT] Export cancelled - empty result")
+        
+        # Check for results
+        results = [img for img in self.widget.images if img.get('result')]
+        
+        if not results:
+            print("[WARNING] No results to export!")
+            print("[WARNING] Please click 'Detect All' first")
+            print("[EXPORT] Export cancelled")
+            print("="*70)
             return
-
-        # Get result info for logging
-        texts_count = len(self.widget.current_result.get('texts', []))
-        plate = self.widget.current_result.get('plate', 'N/A')
+        
+        # Get batch info
+        print(f"\n[EXPORT] Analyzing data...")
+        total_images = len(results)
+        total_texts = sum(len(r['result'].get('texts', [])) for r in results if r.get('result'))
+        total_plates = sum(1 for r in results if r.get('result') and r['result'].get('plate'))
+        
         print(f"[EXPORT] Data available:")
-        print(f"  - Total texts: {texts_count}")
-        print(f"  - Detected plate: {plate}")
-        print(f"  - Processing time: {self.widget.current_result.get('processing_time', 'N/A')}s")
-        print()
-
-        # Export ke TXT
-        print("[EXPORT] Exporting to TXT...")
+        print(f"  - Total images processed: {total_images}")
+        print(f"  - Total texts detected: {total_texts}")
+        print(f"  - License plates detected: {total_plates}")
+        
+        # Show per-image summary
+        print(f"\n[EXPORT] Images to export:")
+        for i, img_data in enumerate(results, 1):
+            if img_data.get('result'):
+                result = img_data['result']
+                filename = result.get('image_filename', 'N/A')
+                texts = result.get('total_texts', 0)
+                plate = result.get('plate', 'N/A')
+                print(f"  [{i}] {filename}")
+                print(f"      - Texts: {texts}")
+                if plate != 'N/A':
+                    print(f"      - Plate: {plate}")
+        
+        # Export batch
+        print(f"\n[EXPORT] Exporting batch results...")
+        print(f"[EXPORT] Formats: TXT + JSON")
+        
         try:
-            txt_path = self.widget.export_to_txt()
-            print(f"[EXPORT] ✓ TXT exported to: {txt_path}")
+            txt_path, json_path = self.widget.export_batch()
+            
+            # Get file sizes
+            txt_size = os.path.getsize(txt_path)
+            json_size = os.path.getsize(json_path)
+            
+            print(f"\n[OK] Export successful!")
+            print(f"[OK] Files created:")
+            print(f"  ✓ TXT: {txt_path}")
+            print(f"      Size: {txt_size:,} bytes ({txt_size/1024:.1f} KB)")
+            print(f"  ✓ JSON: {json_path}")
+            print(f"      Size: {json_size:,} bytes ({json_size/1024:.1f} KB)")
+            
         except Exception as e:
-            print(f"[EXPORT] ✗ TXT export failed: {e}")
+            print(f"\n[ERROR] Export failed!")
+            print(f"[ERROR] Error: {e}")
+            import traceback
+            print(f"[ERROR] Traceback: {traceback.format_exc()}")
+            print("="*70)
+            return
 
-        # Export ke JSON
-        print("[EXPORT] Exporting to JSON...")
-        try:
-            json_path = self.widget.export_to_json()
-            print(f"[EXPORT] ✓ JSON exported to: {json_path}")
-        except Exception as e:
-            print(f"[EXPORT] ✗ JSON export failed: {e}")
+        print(f"\n[EXPORT] Export completed successfully")
+        print(f"[EXPORT] Files saved to: output/")
+        print("="*70)
 
-        # Copy to clipboard
-        print("[EXPORT] Copying to clipboard...")
-        try:
-            self.widget.copy_to_clipboard()
-            print(f"[EXPORT] ✓ Copied to clipboard")
-        except Exception as e:
-            print(f"[EXPORT] ✗ Clipboard copy failed: {e}")
-
-        print()
-        print("[EXPORT] ✓ All exports completed successfully")
-        print("="*60)
-
-        # Show success message for 2 seconds (below "Selamat Datang")
+        # Show success message
         self.show_export_message = True
         self.export_message_time = time.time()
 
     def clear_all(self):
-        """Clear semua - FULL RESET."""
-        print("\n[CLEAR] Clearing all data...")
+        """Clear semua data - DENGAN LENGKAP LOG."""
+        print("\n" + "="*70)
+        print("  [CLEAR] CLEAR BUTTON CLICKED")
+        print("="*70)
+        print(f"[CLEAR] Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        # Show current state - PERBAIKAN: gunakan widget.images
+        if self.widget:
+            queue_size = len(self.widget.images)
+            completed = sum(1 for img in self.widget.images if img.get('status') == 'completed')
+            pending = sum(1 for img in self.widget.images if img.get('status') == 'pending')
+
+            print(f"[CLEAR] Current state:")
+            print(f"  - Images in queue: {queue_size}")
+            print(f"  - Completed: {completed}")
+            print(f"  - Pending: {pending}")
+
+            # Check ocr_result safely
+            if self.ocr_result is not None and isinstance(self.ocr_result, dict):
+                texts = self.ocr_result.get('total_texts', 0)
+                print(f"  - Current result texts: {texts}")
+        
+        print(f"\n[CLEAR] Clearing all data...")
+        
+        # Clear widget data
+        print(f"[CLEAR] Clearing widget queue...")
+        self.widget.clear_all()
         
         # Clear app state
+        print(f"[CLEAR] Clearing app state...")
         self.current_image = None
         self.current_image_path = None
+        self.current_index = -1
         self.ocr_result = None
         self.ocr_error = None
         self.is_loading = False
         
-        # Clear state flags
-        self.image_loaded = False
+        # Clear flags
+        print(f"[CLEAR] Resetting flags...")
+        self.images_loaded = False
         self.ocr_processing = False
         self.ocr_complete = False
-        self.cooldown_complete = True  # Ready untuk detect berikutnya
+        self.cooldown_complete = True
         
-        # Clear widget state
-        self.widget.clear_result()
+        print(f"  - images_loaded: {self.images_loaded}")
+        print(f"  - ocr_processing: {self.ocr_processing}")
+        print(f"  - ocr_complete: {self.ocr_complete}")
+        print(f"  - cooldown_complete: {self.cooldown_complete}")
+        print(f"  - showing_image_index: {self.showing_image_index} (type: {type(self.showing_image_index)})")
+        print(f"  - current_index: {self.current_index} (type: {type(self.current_index)})")
         
-        print("[CLEAR] ✓ All data cleared")
-        print("[INFO] Ready for new image")
+        # Verify cleared - PERBAIKAN: gunakan widget.images
+        print(f"\n[CLEAR] Verifying clear...")
+        final_queue_size = len(self.widget.images) if self.widget else 0
+        print(f"[CLEAR] Final queue size: {final_queue_size}")
+        
+        print(f"\n[OK] All data cleared successfully")
+        print(f"[CLEAR] Ready for new operation")
+        print("="*70)
 
     def on_mouse_click(self, event, x, y, flags, param):
-        """Handle mouse click events."""
+        """Handle mouse click events - DENGAN NAVIGASI IMAGE LIST."""
         if event == cv2.EVENT_LBUTTONDOWN:
-            # Check button clicks (hanya di frame kiri)
             half_width = self.window_width // 2
+
+            # Left frame clicks
             if x < half_width:
+                # Check image list click (untuk navigasi)
+                if self.widget and self.widget.images and len(self.widget.images) > 0:
+                    # Calculate list area
+                    list_start_y = self.window_height // 4 + 50  # After buttons
+                    item_height = 28
+                    max_items = 6
+                    
+                    # Check if click is in list area
+                    if y > list_start_y and y < list_start_y + (max_items * item_height) + 50:
+                        # Calculate which item was clicked
+                        item_index = (y - list_start_y - 8) // item_height
+                        if 0 <= item_index < len(self.widget.images):
+                            # Select this image - PERBAIKAN: ensure int
+                            self.showing_image_index = int(item_index)
+                            self.current_index = int(item_index)
+                            
+                            # Update preview
+                            self.show_preview_image()
+                            
+                            print(f"[NAVIGATION] Showing image {item_index + 1}: {self.widget.images[item_index]['filename']}")
+                
+                # Button clicks
                 for i, button in enumerate(self.buttons):
                     if button.is_clicked(x, y):
                         print(f"\n[CLICK] Button {i+1}: {button.text}")
-                        if i == 0:  # Open
+                        if i == 0:
                             self.open_image()
-                        elif i == 1:  # Detect
+                        elif i == 1:
                             self.detect_text()
-                        elif i == 2:  # Export
+                        elif i == 2:
                             self.export_result()
-                        elif i == 3:  # Clear
+                        elif i == 3:
                             self.clear_all()
                         break
 
     def run(self):
-        """Run aplikasi."""
+        """Run aplikasi - DENGAN ERROR HANDLING LENGKAP."""
         print("\n" + "="*60)
-        print("Aplikasi Python - PaddleOCR Widget")
+        print("Aplikasi Python - Multiple Image OCR")
         print("="*60)
         print("\nLayout:")
-        print("  - Frame Kiri: Teks 'Selamat Datang' + 4 Tombol")
-        print("  - Frame Kanan: PaddleOCR Widget (OCR Text Detection)")
+        print("  - Frame Kiri: Controls + Queue Info + Results")
+        print("  - Frame Kanan: Image Preview dengan Bounding Boxes")
         print("\nFeatures:")
-        print("  - OpenCV-based display")
-        print("  - PaddleOCR v5 Mobile")
-        print("  - Bounding box visualization")
-        print("  - Export to TXT/JSON")
+        print("  - ✅ MULTIPLE image upload")
+        print("  - ✅ Batch OCR processing")
+        print("  - ✅ Queue status tracking")
+        print("  - ✅ Export TXT + JSON")
         print("\nControls:")
-        print("  - Click tombol di frame kiri untuk aksi")
-        print("  - 'o': Open image")
-        print("  - 'd': Detect text")
-        print("  - 'e': Export result")
-        print("  - 'c': Clear all")
-        print("  - 'q' / ESC: Quit")
+        print("  - Click tombol untuk aksi")
+        print("  - 'o' - Open images (multiple)")
+        print("  - 'd' - Detect all")
+        print("  - 'e' - Export results")
+        print("  - 'c' - Clear all")
+        print("  - 'q' / ESC - Quit")
         print("="*60 + "\n")
 
-        # Create Tkinter root untuk file dialogs
-        self.tk_root = tk.Tk()
-        self.tk_root.withdraw()  # Hide main tkinter window
-
-        # Create OpenCV window dengan mouse callback dan custom cursor
+        # Create OpenCV window
         cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(self.window_name, self.window_width, self.window_height)
         cv2.setMouseCallback(self.window_name, self.on_mouse_click)
-        
-        # Set custom cursor (default arrow cursor, bukan +)
-        try:
-            cv2.setWindowTitle(self.window_name, self.window_name)
-        except:
-            pass
-
-        # Button click state
-        button_clicked = [False] * len(self.buttons)
 
         try:
             while True:
-                # Create frame
-                frame = np.zeros((self.window_height, self.window_width, 3), dtype=np.uint8)
+                try:
+                    frame = np.zeros((self.window_height, self.window_width, 3), dtype=np.uint8)
 
-                # Draw UI - PRIORITAS: display_frame (dengan bounding box) jika ada
-                if self.ocr_result and 'display_frame' in self.ocr_result:
-                    # Tampilkan frame dengan bounding box (dari hasil OCR terakhir)
-                    ocr_frame = self.ocr_result['display_frame']
-                elif self.current_image is not None:
-                    # Tampilkan image asli (tanpa bounding box)
-                    ocr_frame = self.current_image
-                else:
-                    ocr_frame = None
+                    # Get preview frame - PERBAIKAN: gunakan showing_image_index
+                    preview_frame = None
+                    
+                    # Set showing_image_index if not set - PERBAIKAN: check dengan int()
+                    try:
+                        showing_idx = int(self.showing_image_index) if self.showing_image_index is not None else -1
+                    except (TypeError, ValueError, AttributeError) as e:
+                        print(f"[DEBUG] showing_image_index error: {e}, value: {self.showing_image_index}")
+                        showing_idx = -1
+                    
+                    if showing_idx < 0 and self.widget and self.widget.images and len(self.widget.images) > 0:
+                        self.showing_image_index = 0  # Set to first image (int)
+                        self.current_index = 0  # Set to first image (int)
+                        showing_idx = 0
+                    
+                    # Get preview from current showing image
+                    if showing_idx >= 0 and self.widget and showing_idx < len(self.widget.images):
+                        img_data = self.widget.images[showing_idx]
+                        display_frame = img_data.get('display_frame')
+                        image = img_data.get('image')
+                        
+                        if display_frame is not None:
+                            preview_frame = display_frame
+                        elif image is not None:
+                            preview_frame = image
 
-                self.draw(frame, ocr_frame)
+                    self.draw(frame, preview_frame)
+                    cv2.imshow(self.window_name, frame)
+                    
+                except Exception as frame_error:
+                    print(f"\n[ERROR] Frame rendering error: {frame_error}")
+                    print(f"[ERROR] Type: {type(frame_error).__name__}")
+                    import traceback
+                    traceback.print_exc()
+                    # Continue running, skip this frame
+                    continue
 
-                # Show
-                cv2.imshow(self.window_name, frame)
-
-                # Handle keyboard - ESC disabled, only 'q' can close
                 key = cv2.waitKey(10) & 0xFF
-                if key == ord('q'):  # Only 'q' closes app, ESC (key 27) disabled
+                if key == ord('q'):
                     break
                 elif key == ord('o'):
                     self.open_image()
@@ -777,11 +960,18 @@ class ResponsiveApp:
                     self.export_result()
                 elif key == ord('c'):
                     self.clear_all()
+                elif key == 27:
+                    break
 
         except Exception as e:
-            print(f"\n[ERROR] {e}")
+            print(f"\n{'='*60}")
+            print(f"[FATAL ERROR] {e}")
+            print(f"[ERROR TYPE] {type(e).__name__}")
+            print(f"{'='*60}")
+            import traceback
+            traceback.print_exc()
         finally:
-            self.widget.clear_result()
+            self.widget.clear_all()
             self.tk_root.destroy()
             cv2.destroyAllWindows()
             print("\n[OK] Application closed")

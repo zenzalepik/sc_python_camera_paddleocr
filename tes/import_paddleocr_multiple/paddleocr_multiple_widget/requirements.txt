@@ -1,0 +1,29 @@
+# Python 3.10.11
+# PaddleOCR Mobile - Dependencies
+
+# PaddlePaddle (CPU version - recommended for most users)
+paddlepaddle==3.2.0
+
+# If you have NVIDIA GPU, use this instead:
+# paddlepaddle-gpu==3.2.0
+
+# PaddleOCR
+paddleocr==3.3.3
+
+# YOLOv8n (for future integration)
+ultralytics==8.0.196
+
+# Image processing
+opencv-python==4.10.0.84
+opencv-python-headless==4.10.0.84
+Pillow==10.4.0
+
+# Utilities
+python-dotenv==1.0.1
+
+# ONNX
+onnx==1.17.0
+onnxruntime==1.19.2
+
+# Optional: for better performance
+# onnxruntime-gpu==1.19.2

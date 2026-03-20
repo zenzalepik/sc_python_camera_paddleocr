@@ -1,0 +1,57 @@
+PaddleOCR Multiple Image Text Detection Result
+============================================================
+
+Image 1: Screenshot 2026-03-07 142543.png
+Timestamp: 2026-03-19T09:57:42.909628
+Total Texts: 5
+============================================================
+
+[1] S
+    Confidence: 0.8982
+[2] 2470
+    Confidence: 0.9858
+[3] BAB
+    Confidence: 0.7749
+[4] 09
+    Confidence: 0.9558
+[5] 24
+    Confidence: 0.9223
+
+Image 3: Screenshot 2026-03-08 094450.png
+Timestamp: 2026-03-19T09:58:19.575945
+Total Texts: 8
+============================================================
+
+[1] m
+    Confidence: 0.9959
+[2] Merdeka.com
+    Confidence: 0.9903
+[3] >
+    Confidence: 0.5720
+[4] ×
+    Confidence: 0.5915
+[5] 8
+    Confidence: 0.9762
+[6] 2833
+    Confidence: 0.9987
+[7] XKX
+    Confidence: 0.9615
+[8] 096×408
+    Confidence: 0.8304
+
+Image 4: Screenshot 2026-03-08 094556.png
+Timestamp: 2026-03-19T09:58:21.479957
+Total Texts: 5
+============================================================
+
+[1] Cintamobil
+    Confidence: 0.9908
+[2] 669
+    Confidence: 0.9946
+[3] 08-19
+    Confidence: 0.8873
+[4] CINTAMOBIL
+    Confidence: 0.9549
+[5] 1.32
+    Confidence: 0.9948
+

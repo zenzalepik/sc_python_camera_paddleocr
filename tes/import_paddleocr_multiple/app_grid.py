@@ -15,9 +15,9 @@ from tkinter import filedialog
 import time
 import threading
 
-# Import PaddleOCR Multiple Engine (MENGGUNAKAN ENGINE YANG SAMA!)
+# Import PaddleOCR Multiple Core Engine (100% COPY LOGIC dari import_paddleocr!)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "paddleocr_multiple_engine"))
-from paddleocr_multiple_engine import PaddleOCRMultipleEngine
+from paddleocr_multiple_engine import PaddleOCRMultipleCoreEngine
 
 
 class Button:
@@ -80,8 +80,8 @@ class ResponsiveApp:
         self.tk_root = tk.Tk()
         self.tk_root.withdraw()
 
-        # Initialize PaddleOCR Multiple Engine (MENGGUNAKAN ENGINE YANG SAMA!)
-        self.engine = PaddleOCRMultipleEngine()  # Tidak perlu root
+        # Initialize PaddleOCR Multiple Core Engine (100% COPY LOGIC dari import_paddleocr!)
+        self.engine = PaddleOCRMultipleCoreEngine()  # Tidak perlu root
 
         # State variables
         self.current_image = None
@@ -306,6 +306,24 @@ class ResponsiveApp:
 
         # PLATE DETECTION PANEL - KESIMPULAN PLAT NOMOR!
         if plate:
+            # LOG TERMINAL - PLATE DETECTED!
+            print(f"\n{'='*80}")
+            print(f"  [PLATE UI] PLAT NOMOR TERDETEKSI - DISPLAYING PANEL")
+            print(f"{'='*80}")
+            print(f"[PLATE UI] Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"[PLATE UI] Image: {img_data.get('filename', 'Unknown')}")
+            print(f"[PLATE UI] Plate detected: {plate.upper()}")
+            print(f"[PLATE UI] Drawing plate panel:")
+            print(f"  - Position: Y={plate_panel_y}")
+            print(f"  - Size: {plate_panel_height}px height")
+            print(f"  - Color: Green background (0, 80, 0)")
+            print(f"  - Border: Green (0, 255, 0) 3px")
+            print(f"  - Title: 'PLAT NOMOR TERDETEKSI:' (white, 0.8x)")
+            print(f"  - Plate text: '{plate.upper()}' (yellow, 2.5x, bold 4px)")
+            print(f"  - Validation: '✓ Plat nomor Indonesia valid' (green)")
+            print(f"[PLATE UI] Panel drawn successfully!")
+            print(f"{'='*80}\n")
+            
             # Draw plate panel with special styling
             plate_panel_y = info_y + 20  # Lebih bawah
             plate_panel_height = 100  # Lebih tinggi
@@ -338,7 +356,23 @@ class ResponsiveApp:
 
             # Move text list FAR DOWN
             list_y = validation_y + 40
+            
+            # LOG: Plate panel displayed
+            print(f"[PLATE UI] ✓ Panel displayed at Y={plate_panel_y}")
+            print(f"[PLATE UI] ✓ Text '{plate.upper()}' displayed at X={plate_x}, Y={plate_panel_y + 80}")
+            print(f"[PLATE UI] ✓ Validation text displayed at Y={validation_y}")
         else:
+            # No plate detected - LOG TERMINAL
+            print(f"\n{'='*80}")
+            print(f"  [PLATE UI] NO PLATE DETECTED")
+            print(f"{'='*80}")
+            print(f"[PLATE UI] Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"[PLATE UI] Image: {img_data.get('filename', 'Unknown')}")
+            print(f"[PLATE UI] Status: No plate detected in OCR results")
+            print(f"[PLATE UI] Displaying: 'Plat Nomor: Tidak terdeteksi' (gray text)")
+            print(f"[PLATE UI] Position: Y={info_y}")
+            print(f"{'='*80}\n")
+            
             # No plate detected
             cv2.putText(frame, "Plat Nomor: Tidak terdeteksi", (margin + 15, info_y),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (128, 128, 128), 1)

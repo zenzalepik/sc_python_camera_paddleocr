@@ -1,59 +1,65 @@
 """
-PaddleOCR Multiple Engine Wrapper
-Wrapper untuk multiple image processing menggunakan ENGINE yang sama persis dengan single image version.
+PaddleOCR Multiple Engine - CORE LOGIC COPY dari import_paddleocr
 
-SEMUA FITUR dari import_paddleocr/widget_wrapper.py DI-COPY UTUH:
-- ✅ License plate detection (plat nomor Indonesia)
-- ✅ O/0, B/8, I/1 handling
-- ✅ Delete space option
-- ✅ Group by line
-- ✅ Confidence threshold
+SEMUA LOGIC DI-COPY 100% DARI:
+  D:\Github\sc_python_camera_paddleocr\tes\import_paddleocr\paddleocr_widget\widget_wrapper.py
+
+CARA KERJA:
+1. Create instance dari PaddleOCRWidget (dari engine yang di-copy)
+2. LOOPING untuk setiap image
+3. Panggil method yang SAMA PERSIS: process_frame(), get_result(), dll
+4. Kumpulkan semua hasil
+
+SEMUA FITUR SAMA:
+- ✅ OCR dengan PaddleOCR v5 Mobile
+- ✅ Delete space
+- ✅ Group by line (horizontal grouping)
+- ✅ License plate detection (indonesia/plat_processor.py)
+- ✅ Bounding box visualization
 - ✅ Export TXT/JSON
 - ✅ Copy to clipboard
 """
 
 import os
 import sys
-import json
 import cv2
 import numpy as np
-from pathlib import Path
 from datetime import datetime
 import threading
 
-# Import dari engine yang di-copy (SAMA PERSIS!)
+# Import dari engine yang di-copy (100% SAME LOGIC!)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "paddleocr_engine"))
 from paddleocr_engine import PaddleOCRWidget
 
 
-class PaddleOCRMultipleEngine:
+class PaddleOCRMultipleCoreEngine:
     """
-    Multiple Image Engine - Menggunakan logic yang sama persis dengan single image.
+    Multiple Image Engine - CORE LOGIC COPY.
     
     CARA KERJA:
-    1. Create instance dari PaddleOCRWidget (dari engine yang di-copy)
-    2. Loop untuk setiap image
-    3. Panggil method yang sama: process_image(), get_result(), dll
+    1. Initialize SINGLE widget (dengan semua logic dari referensi)
+    2. Add multiple images ke queue
+    3. process_all() -> LOOPING call widget.process_frame() untuk setiap image
+    4. Return semua hasil
     
-    SEMUA FITUR SAMA:
-    - License plate detection
-    - O/0, B/8, I/1 correction
-    - Delete space
-    - Group by line
-    - Export TXT/JSON
-    - Copy to clipboard
+    SEMUA LOGIC SAMA PERSIS dengan import_paddleocr!
     """
 
     def __init__(self, config=None):
         """
-        Initialize Multiple Engine.
+        Initialize Multiple Engine dengan CORE LOGIC yang sama.
         
         Args:
             config: Configuration dict (sama dengan single image)
         """
         self.config = config or {}
         
-        # Create SINGLE widget instance (PAKAI ENGINE YANG SAMA!)
+        # Create SINGLE widget instance (PAKAI CORE LOGIC YANG SAMA!)
+        print(f"\n{'='*80}")
+        print(f"  PADDLEOCR MULTIPLE ENGINE - CORE LOGIC COPY")
+        print(f"{'='*80}")
+        print(f"\n[INIT] Creating PaddleOCRWidget dengan logic dari import_paddleocr...")
+        
         self.widget = PaddleOCRWidget(config=self.config)
         
         # Multiple image state
@@ -61,13 +67,15 @@ class PaddleOCRMultipleEngine:
         self.processed_count = 0
         self.failed_count = 0
         
-        print(f"\n[INFO] PaddleOCR Multiple Engine initialized")
-        print(f"[INFO] Using SAME engine as single image version")
-        print(f"[INFO] All features preserved:")
-        print(f"  - License plate detection: {self.widget.detect_license_plate}")
-        print(f"  - Delete space: {self.widget.delete_space}")
-        print(f"  - Group by line: {self.widget.group_by_line}")
-        print(f"  - Line tolerance: {self.widget.line_tolerance}px")
+        print(f"\n[INFO] Multiple Engine initialized")
+        print(f"[INFO] Using 100% SAME core logic as import_paddleocr")
+        print(f"[INFO] Features:")
+        print(f"  - OCR: PaddleOCR v5 Mobile")
+        print(f"  - Delete Space: {self.widget.delete_space}")
+        print(f"  - Group by Line: {self.widget.group_by_line}")
+        print(f"  - Line Tolerance: {self.widget.line_tolerance}px")
+        print(f"  - License Plate Detection: {self.widget.detect_license_plate}")
+        print(f"{'='*80}\n")
 
     def add_image(self, image_path):
         """
@@ -120,7 +128,17 @@ class PaddleOCRMultipleEngine:
 
     def process_image(self, index):
         """
-        Process single image by index - MENGGUNAKAN ENGINE YANG SAMA!
+        Process single image by index - MENGGUNAKAN CORE LOGIC YANG SAMA!
+        
+        LOGIC (COPY 100% dari import_paddleocr):
+        1. Load image
+        2. Run PaddleOCR prediction
+        3. Parse result (rec_texts, rec_scores, rec_polys)
+        4. Apply delete_space (if enabled)
+        5. Apply group_by_line (if enabled)
+        6. Detect license plate (if enabled)
+        7. Draw bounding boxes
+        8. Return result dict
         
         Args:
             index: Index of image to process
@@ -135,19 +153,26 @@ class PaddleOCRMultipleEngine:
         img_data = self.images[index]
         img_data['status'] = 'processing'
         
-        print(f"\n{'='*60}")
-        print(f"[PROCESS] Processing image {index + 1}/{len(self.images)}")
+        print(f"\n{'='*80}")
+        print(f"[PROCESS] Image {index + 1}/{len(self.images)}")
         print(f"  - File: {img_data['filename']}")
-        print(f"{'='*60}")
+        print(f"{'='*80}")
         
         try:
-            # PAKAI ENGINE YANG SAMA PERSIS!
+            # PAKAI CORE LOGIC YANG SAMA PERSIS!
             image = img_data['image']
             
-            # Process dengan widget (ENGINE SAMA!)
+            # Call widget.process_frame() - INI CORE LOGIC YANG SAMA!
+            # Di dalamnya ada:
+            # 1. OCR prediction
+            # 2. Parse results
+            # 3. Delete space
+            # 4. Group by line
+            # 5. Plate detection
+            # 6. Draw boxes
             frame_with_boxes, result = self.widget.process_frame(image)
             
-            # Get results (ENGINE SAMA!)
+            # Get results - SAME LOGIC!
             texts = self.widget.get_texts()
             plate = self.widget.get_detected_plate()
             
@@ -158,7 +183,7 @@ class PaddleOCRMultipleEngine:
             
             self.processed_count += 1
             
-            print(f"[SUCCESS] Detected {len(texts)} text(s)")
+            print(f"\n[SUCCESS] Detected {len(texts)} text(s)")
             if plate:
                 print(f"[PLATE] Detected: {plate}")
             
@@ -174,7 +199,7 @@ class PaddleOCRMultipleEngine:
             
             self.failed_count += 1
             
-            print(f"[ERROR] Processing failed!")
+            print(f"\n[ERROR] Processing failed!")
             print(f"  - Error: {error_msg}")
             print(f"  - Traceback: {error_traceback}")
             
@@ -182,7 +207,14 @@ class PaddleOCRMultipleEngine:
 
     def process_all(self):
         """
-        Process all images in queue - LOOPING dengan engine yang sama.
+        Process all images in queue - LOOPING dengan core logic yang sama.
+        
+        CARA KERJA:
+        1. Loop melalui semua images di queue
+        2. Untuk setiap image, call process_image(index)
+        3. process_image() call widget.process_frame() - CORE LOGIC SAMA!
+        4. Kumpulkan semua results
+        5. Return list of results
         
         Returns:
             list: List of OCR results
@@ -195,24 +227,28 @@ class PaddleOCRMultipleEngine:
         self.processed_count = 0
         self.failed_count = 0
         
-        print(f"\n{'='*60}")
+        print(f"\n{'='*80}")
         print(f"[BATCH] Starting batch processing")
         print(f"  - Total images: {len(self.images)}")
-        print(f"{'='*60}")
+        print(f"  - Delete Space: {self.widget.delete_space}")
+        print(f"  - Group by Line: {self.widget.group_by_line}")
+        print(f"  - Line Tolerance: {self.widget.line_tolerance}px")
+        print(f"  - Detect License Plate: {self.widget.detect_license_plate}")
+        print(f"{'='*80}")
         
-        # LOOPING - Pakai engine yang sama untuk setiap image!
+        # LOOPING - Pakai core logic yang sama untuk setiap image!
         for i, img_data in enumerate(self.images):
             print(f"\n[BATCH] Image {i+1}/{len(self.images)}")
             result = self.process_image(i)
             if result:
                 results.append(result)
         
-        print(f"\n{'='*60}")
+        print(f"\n{'='*80}")
         print(f"[BATCH] Processing complete!")
         print(f"  - Total: {len(self.images)}")
         print(f"  - Success: {self.processed_count}")
         print(f"  - Failed: {self.failed_count}")
-        print(f"{'='*60}")
+        print(f"{'='*80}\n")
         
         return results
 
@@ -275,7 +311,7 @@ class PaddleOCRMultipleEngine:
 
     def export_to_txt(self, index=None, output_path=None):
         """
-        Export result to TXT file - MENGGUNAKAN ENGINE EXPORT YANG SAMA!
+        Export result to TXT file - SAME LOGIC as import_paddleocr!
         
         Args:
             index: Image index (optional). If None, export all results.
@@ -310,7 +346,7 @@ class PaddleOCRMultipleEngine:
         return output_path
 
     def _write_result_to_file(self, f, result, index):
-        """Write single result to file - SAMA PERSIS dengan engine."""
+        """Write single result to file - SAME LOGIC as import_paddleocr!"""
         f.write(f"Image {index}: {result.get('image_filename', 'N/A')}\n")
         f.write(f"Timestamp: {result.get('timestamp', 'N/A')}\n")
         f.write(f"Processing Time: {result.get('processing_time', 0):.2f}s\n")
@@ -327,7 +363,7 @@ class PaddleOCRMultipleEngine:
 
     def export_to_json(self, index=None, output_path=None):
         """
-        Export result to JSON file - MENGGUNAKAN ENGINE EXPORT YANG SAMA!
+        Export result to JSON file - SAME LOGIC as import_paddleocr!
         
         Args:
             index: Image index (optional). If None, export all results.
@@ -336,6 +372,8 @@ class PaddleOCRMultipleEngine:
         Returns:
             str: Output file path
         """
+        import json
+        
         if output_path is None:
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             if index is not None:
@@ -363,7 +401,7 @@ class PaddleOCRMultipleEngine:
 
     def export_batch(self, output_dir=None):
         """
-        Export all results (TXT + JSON) - MENGGUNAKAN METHOD YANG SAMA!
+        Export all results (TXT + JSON) - SAME LOGIC as import_paddleocr!
         
         Args:
             output_dir: Output directory (optional)
@@ -385,7 +423,7 @@ class PaddleOCRMultipleEngine:
 
     def copy_to_clipboard(self, index=None):
         """
-        Copy texts to clipboard - MENGGUNAKAN METHOD YANG SAMA!
+        Copy texts to clipboard - SAME LOGIC as import_paddleocr!
         
         Args:
             index: Image index (optional). If None, copy all texts.
@@ -416,4 +454,4 @@ class PaddleOCRMultipleEngine:
 
 
 # Export
-__all__ = ['PaddleOCRMultipleEngine']
+__all__ = ['PaddleOCRMultipleCoreEngine']

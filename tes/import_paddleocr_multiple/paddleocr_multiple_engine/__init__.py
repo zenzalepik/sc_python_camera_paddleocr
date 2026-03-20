@@ -175,14 +175,20 @@ class PaddleOCRMultipleCoreEngine:
             # Get results - SAME LOGIC!
             texts = self.widget.get_texts()
             plate = self.widget.get_detected_plate()
-            
+
             # Update image data
             img_data['result'] = self.widget.current_result
+            
+            # TAMBAHKAN PLATE KE RESULT!
+            if img_data['result'] and plate:
+                img_data['result']['plate'] = plate
+                print(f"[DEBUG] Added plate to result: {plate}")
+            
             img_data['display_frame'] = frame_with_boxes
             img_data['status'] = 'completed'
-            
+
             self.processed_count += 1
-            
+
             print(f"\n[SUCCESS] Detected {len(texts)} text(s)")
             if plate:
                 print(f"[PLATE] Detected: {plate}")

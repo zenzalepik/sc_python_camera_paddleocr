@@ -271,6 +271,20 @@ class ResponsiveApp:
         img_data = self.engine.images[self.selected_index]
         result = img_data.get('result')
         
+        # DEBUG - CHECK WHAT'S IN IMG_DATA!
+        print(f"\n{'='*80}")
+        print(f"  [DEBUG] CHECKING IMG_DATA & RESULT")
+        print(f"{'='*80}")
+        print(f"[DEBUG] selected_index: {self.selected_index}")
+        print(f"[DEBUG] img_data keys: {img_data.keys()}")
+        print(f"[DEBUG] img_data['status']: {img_data.get('status')}")
+        print(f"[DEBUG] img_data['result'] exists: {'result' in img_data}")
+        if img_data.get('result'):
+            print(f"[DEBUG] result keys: {img_data['result'].keys()}")
+            print(f"[DEBUG] result['plate']: {img_data['result'].get('plate', 'NOT FOUND')}")
+            print(f"[DEBUG] result['texts']: {len(img_data['result'].get('texts', []))} texts")
+        print(f"{'='*80}\n")
+        
         # Draw header
         filename = img_data.get('filename', 'Unknown')
         header_text = f"Image #{self.selected_index + 1}: {filename}"
@@ -300,12 +314,33 @@ class ResponsiveApp:
         
         # Draw results
         texts = result.get('texts', [])
+        
+        # PLATE DETECTION - CHECK SEMUA FIELD!
         plate = result.get('plate', None)
+        if not plate:
+            plate = result.get('detected_plate', None)
+        if not plate:
+            plate = result.get('plate_number', None)
+        
+        # LOG: Check plate detection
+        print(f"\n[DEBUG] Checking plate in result...")
+        print(f"[DEBUG] result keys: {result.keys() if isinstance(result, dict) else 'Not a dict'}")
+        print(f"[DEBUG] plate from result.get('plate'): {plate}")
+        print(f"[DEBUG] img_data keys: {img_data.keys()}")
+        
+        # Also check img_data directly
+        if not plate and 'plate' in img_data:
+            plate = img_data['plate']
+            print(f"[DEBUG] Found plate in img_data: {plate}")
 
         info_y = panel_start_y + 70
 
         # PLATE DETECTION PANEL - KESIMPULAN PLAT NOMOR!
         if plate:
+            # Define position FIRST
+            plate_panel_y = info_y + 20  # Lebih bawah
+            plate_panel_height = 100  # Lebih tinggi
+            
             # LOG TERMINAL - PLATE DETECTED!
             print(f"\n{'='*80}")
             print(f"  [PLATE UI] PLAT NOMOR TERDETEKSI - DISPLAYING PANEL")
@@ -325,9 +360,6 @@ class ResponsiveApp:
             print(f"{'='*80}\n")
             
             # Draw plate panel with special styling
-            plate_panel_y = info_y + 20  # Lebih bawah
-            plate_panel_height = 100  # Lebih tinggi
-
             # Background green
             cv2.rectangle(frame, (margin + 10, plate_panel_y),
                          (width - margin - 10, plate_panel_y + plate_panel_height),

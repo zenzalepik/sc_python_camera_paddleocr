@@ -271,20 +271,6 @@ class ResponsiveApp:
         img_data = self.engine.images[self.selected_index]
         result = img_data.get('result')
         
-        # DEBUG - CHECK WHAT'S IN IMG_DATA!
-        print(f"\n{'='*80}")
-        print(f"  [DEBUG] CHECKING IMG_DATA & RESULT")
-        print(f"{'='*80}")
-        print(f"[DEBUG] selected_index: {self.selected_index}")
-        print(f"[DEBUG] img_data keys: {img_data.keys()}")
-        print(f"[DEBUG] img_data['status']: {img_data.get('status')}")
-        print(f"[DEBUG] img_data['result'] exists: {'result' in img_data}")
-        if img_data.get('result'):
-            print(f"[DEBUG] result keys: {img_data['result'].keys()}")
-            print(f"[DEBUG] result['plate']: {img_data['result'].get('plate', 'NOT FOUND')}")
-            print(f"[DEBUG] result['texts']: {len(img_data['result'].get('texts', []))} texts")
-        print(f"{'='*80}\n")
-        
         # Draw header
         filename = img_data.get('filename', 'Unknown')
         header_text = f"Image #{self.selected_index + 1}: {filename}"
@@ -322,17 +308,10 @@ class ResponsiveApp:
         if not plate:
             plate = result.get('plate_number', None)
         
-        # LOG: Check plate detection
-        print(f"\n[DEBUG] Checking plate in result...")
-        print(f"[DEBUG] result keys: {result.keys() if isinstance(result, dict) else 'Not a dict'}")
-        print(f"[DEBUG] plate from result.get('plate'): {plate}")
-        print(f"[DEBUG] img_data keys: {img_data.keys()}")
-        
         # Also check img_data directly
         if not plate and 'plate' in img_data:
             plate = img_data['plate']
-            print(f"[DEBUG] Found plate in img_data: {plate}")
-
+        
         info_y = panel_start_y + 70
 
         # PLATE DETECTION PANEL - KESIMPULAN PLAT NOMOR!
@@ -340,24 +319,6 @@ class ResponsiveApp:
             # Define position FIRST
             plate_panel_y = info_y + 20  # Lebih bawah
             plate_panel_height = 100  # Lebih tinggi
-            
-            # LOG TERMINAL - PLATE DETECTED!
-            print(f"\n{'='*80}")
-            print(f"  [PLATE UI] PLAT NOMOR TERDETEKSI - DISPLAYING PANEL")
-            print(f"{'='*80}")
-            print(f"[PLATE UI] Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}")
-            print(f"[PLATE UI] Image: {img_data.get('filename', 'Unknown')}")
-            print(f"[PLATE UI] Plate detected: {plate.upper()}")
-            print(f"[PLATE UI] Drawing plate panel:")
-            print(f"  - Position: Y={plate_panel_y}")
-            print(f"  - Size: {plate_panel_height}px height")
-            print(f"  - Color: Green background (0, 80, 0)")
-            print(f"  - Border: Green (0, 255, 0) 3px")
-            print(f"  - Title: 'PLAT NOMOR TERDETEKSI:' (white, 0.8x)")
-            print(f"  - Plate text: '{plate.upper()}' (yellow, 2.5x, bold 4px)")
-            print(f"  - Validation: '✓ Plat nomor Indonesia valid' (green)")
-            print(f"[PLATE UI] Panel drawn successfully!")
-            print(f"{'='*80}\n")
             
             # Draw plate panel with special styling
             # Background green
@@ -388,23 +349,7 @@ class ResponsiveApp:
 
             # Move text list FAR DOWN
             list_y = validation_y + 40
-            
-            # LOG: Plate panel displayed
-            print(f"[PLATE UI] ✓ Panel displayed at Y={plate_panel_y}")
-            print(f"[PLATE UI] ✓ Text '{plate.upper()}' displayed at X={plate_x}, Y={plate_panel_y + 80}")
-            print(f"[PLATE UI] ✓ Validation text displayed at Y={validation_y}")
         else:
-            # No plate detected - LOG TERMINAL
-            print(f"\n{'='*80}")
-            print(f"  [PLATE UI] NO PLATE DETECTED")
-            print(f"{'='*80}")
-            print(f"[PLATE UI] Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}")
-            print(f"[PLATE UI] Image: {img_data.get('filename', 'Unknown')}")
-            print(f"[PLATE UI] Status: No plate detected in OCR results")
-            print(f"[PLATE UI] Displaying: 'Plat Nomor: Tidak terdeteksi' (gray text)")
-            print(f"[PLATE UI] Position: Y={info_y}")
-            print(f"{'='*80}\n")
-            
             # No plate detected
             cv2.putText(frame, "Plat Nomor: Tidak terdeteksi", (margin + 15, info_y),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (128, 128, 128), 1)

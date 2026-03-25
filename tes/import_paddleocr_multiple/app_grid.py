@@ -128,30 +128,61 @@ class ResponsiveApp:
             completed = sum(1 for img in self.engine.images if img.get('status') == 'completed')
             processing = sum(1 for img in self.engine.images if img.get('status') == 'processing')
             failed = sum(1 for img in self.engine.images if img.get('status') == 'failed')
-            
+
             info_text = f"Queue: {total} | ✓:{completed} ⏳:{processing} ✗:{failed}"
             cv2.putText(frame, info_text, (width - 350, 25),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-            
+
             # Progress bar
             progress_width = 300
             progress_height = 20
             progress_x = width - 350
             progress_y = 50
-            
+
             cv2.rectangle(frame, (progress_x, progress_y),
-                         (progress_x + progress_width, progress_y + progress_height), 
+                         (progress_x + progress_width, progress_y + progress_height),
                          (100, 100, 100), -1)
-            
+
             if total > 0:
                 fill_width = int(progress_width * completed / total)
                 cv2.rectangle(frame, (progress_x, progress_y),
-                             (progress_x + fill_width, progress_y + progress_height), 
+                             (progress_x + fill_width, progress_y + progress_height),
                              (0, 255, 0), -1)
-                
+
                 percent = int(completed / total * 100)
                 cv2.putText(frame, f"{percent}%", (progress_x + progress_width + 10, progress_y + 18),
                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+        
+        # MOST FREQUENT PLATE - KESIMPULAN PLAT NOMOR TERBANYAK!
+        if self.engine and self.engine.images:
+            plate_info = self.engine.get_most_frequent_plate()
+            if plate_info:
+                plate = plate_info['plate']
+                count = plate_info['count']
+                total = plate_info['total_images']
+                percentage = plate_info['percentage']
+                
+                # Draw conclusion panel
+                conclusion_y = bar_height - 35
+                
+                # Check if ALL plates are different (no duplicates)
+                # Pink color: 5 images, 5 different plates (all unique)
+                if count == 1 and total >= 2:
+                    # PINK COLOR - All plates are different (no duplicates)
+                    cv2.rectangle(frame, (20, conclusion_y), (width - 20, bar_height - 5), (147, 20, 255), -1)
+                    cv2.rectangle(frame, (20, conclusion_y), (width - 20, bar_height - 5), (255, 105, 180), 2)
+                    
+                    conclusion_text = f"🚗 Semua plat berbeda ({total} gambar, {total} plat unik)"
+                    cv2.putText(frame, conclusion_text, (30, bar_height - 12),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+                else:
+                    # GREEN COLOR - Has duplicates (most frequent plate)
+                    cv2.rectangle(frame, (20, conclusion_y), (width - 20, bar_height - 5), (0, 100, 0), -1)
+                    cv2.rectangle(frame, (20, conclusion_y), (width - 20, bar_height - 5), (0, 255, 0), 2)
+                    
+                    conclusion_text = f"🚗 KESIMPULAN: Plat terbanyak = {plate} ({count}/{total} = {percentage:.1f}%)"
+                    cv2.putText(frame, conclusion_text, (30, bar_height - 12),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
         
         # Export success message
         if self.show_export_message:

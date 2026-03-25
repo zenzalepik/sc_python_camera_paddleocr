@@ -458,6 +458,42 @@ class PaddleOCRMultipleCoreEngine:
         self.widget.clear_result()
         print("[INFO] All data cleared")
 
+    def get_most_frequent_plate(self):
+        """
+        Get the most frequent license plate from all scanned images.
+        
+        Returns:
+            dict: {'plate': str, 'count': int, 'percentage': float} or None
+        """
+        from collections import Counter
+        
+        # Collect all plates
+        all_plates = []
+        for img_data in self.images:
+            if img_data.get('result') and img_data['result'].get('plate'):
+                plate = img_data['result']['plate']
+                all_plates.append(plate)
+        
+        if not all_plates:
+            return None
+        
+        # Count frequency
+        plate_counts = Counter(all_plates)
+        
+        # Get most common
+        most_common = plate_counts.most_common(1)[0]
+        plate, count = most_common
+        
+        # Calculate percentage
+        percentage = (count / len(all_plates)) * 100
+        
+        return {
+            'plate': plate,
+            'count': count,
+            'percentage': percentage,
+            'total_images': len(all_plates)
+        }
+
 
 # Export
 __all__ = ['PaddleOCRMultipleCoreEngine']

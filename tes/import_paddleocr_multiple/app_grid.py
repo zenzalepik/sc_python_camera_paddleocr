@@ -153,7 +153,7 @@ class ResponsiveApp:
                 cv2.putText(frame, f"{percent}%", (progress_x + progress_width + 10, progress_y + 18),
                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
         
-        # MOST FREQUENT PLATE - KESIMPULAN PLAT NOMOR TERBANYAK!
+        # MOST FREQUENT PLATE - KESIMPULAN PLAT NOMOR TERBANYAK! (CENTERED AT TOP)
         if self.engine and self.engine.images:
             plate_info = self.engine.get_most_frequent_plate()
             if plate_info:
@@ -162,27 +162,30 @@ class ResponsiveApp:
                 total = plate_info['total_images']
                 percentage = plate_info['percentage']
                 
-                # Draw conclusion panel
-                conclusion_y = bar_height - 35
+                # Draw conclusion panel - SMALLER & CENTERED
+                conclusion_height = 25
+                conclusion_y = 5  # Top position
+                panel_width = 500  # Fixed width
+                panel_x = (width - panel_width) // 2  # Center horizontally
                 
                 # Check if ALL plates are different (no duplicates)
                 # Pink color: 5 images, 5 different plates (all unique)
                 if count == 1 and total >= 2:
                     # PINK COLOR - All plates are different (no duplicates)
-                    cv2.rectangle(frame, (20, conclusion_y), (width - 20, bar_height - 5), (147, 20, 255), -1)
-                    cv2.rectangle(frame, (20, conclusion_y), (width - 20, bar_height - 5), (255, 105, 180), 2)
+                    cv2.rectangle(frame, (panel_x, conclusion_y), (panel_x + panel_width, conclusion_y + conclusion_height), (147, 20, 255), -1)
+                    cv2.rectangle(frame, (panel_x, conclusion_y), (panel_x + panel_width, conclusion_y + conclusion_height), (255, 105, 180), 2)
                     
-                    conclusion_text = f"🚗 Semua plat berbeda ({total} gambar, {total} plat unik)"
-                    cv2.putText(frame, conclusion_text, (30, bar_height - 12),
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+                    conclusion_text = f"🚗 Semua plat berbeda ({total} unik)"
+                    cv2.putText(frame, conclusion_text, (panel_x + 10, conclusion_y + 18),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
                 else:
                     # GREEN COLOR - Has duplicates (most frequent plate)
-                    cv2.rectangle(frame, (20, conclusion_y), (width - 20, bar_height - 5), (0, 100, 0), -1)
-                    cv2.rectangle(frame, (20, conclusion_y), (width - 20, bar_height - 5), (0, 255, 0), 2)
+                    cv2.rectangle(frame, (panel_x, conclusion_y), (panel_x + panel_width, conclusion_y + conclusion_height), (0, 100, 0), -1)
+                    cv2.rectangle(frame, (panel_x, conclusion_y), (panel_x + panel_width, conclusion_y + conclusion_height), (0, 255, 0), 2)
                     
-                    conclusion_text = f"🚗 KESIMPULAN: Plat terbanyak = {plate} ({count}/{total} = {percentage:.1f}%)"
-                    cv2.putText(frame, conclusion_text, (30, bar_height - 12),
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+                    conclusion_text = f"🚗 Terbanyak: {plate} ({count}x)"
+                    cv2.putText(frame, conclusion_text, (panel_x + 10, conclusion_y + 18),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
         
         # Export success message
         if self.show_export_message:

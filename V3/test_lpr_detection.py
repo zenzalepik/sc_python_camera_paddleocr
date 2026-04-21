@@ -6,10 +6,11 @@ import cv2
 import numpy as np
 import sys
 
-# Fix encoding for Windows console
-if sys.platform == 'win32':
-    import os
-    os.system('chcp 65001 > nul')
+# Fix encoding for console output (cross-platform)
+import locale
+import codecs
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
 
 print("="*60)
 print("LPR Detection Test")
